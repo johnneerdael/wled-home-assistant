@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from aiohttp import ClientError, ClientResponseError
 
-from custom_components.wled.api import WLEDAPIClient
-from custom_components.wled.exceptions import (
+from custom_components.wled_jsonapi.api import WLEDJSONAPIClient
+from custom_components.wled_jsonapi.exceptions import (
     WLEDCommandError,
     WLEDConnectionError,
     WLEDInvalidResponseError,

@@ -1,4 +1,4 @@
-# WLED Integration for Home Assistant
+# WLED JSONAPI Integration for Home Assistant
 
 A robust Home Assistant integration for WLED LED controllers that provides reliable control through the JSON API with automatic retry mechanisms and device discovery.
 
@@ -21,14 +21,14 @@ A robust Home Assistant integration for WLED LED controllers that provides relia
 2. Add this repository to HACS as a custom integration
 3. Restart Home Assistant
 4. Go to Settings > Integrations > Add Integration
-5. Search for "WLED" and follow the setup instructions
+5. Search for "WLED JSONAPI" and follow the setup instructions
 
 ### Manual Installation
 
-1. Copy the `custom_components/wled` directory to your Home Assistant `config/custom_components` directory
+1. Copy the `custom_components/wled_jsonapi` directory to your Home Assistant `config/custom_components` directory
 2. Restart Home Assistant
 3. Go to Settings > Integrations > Add Integration
-4. Search for "WLED" and follow the setup instructions
+4. Search for "WLED JSONAPI" and follow the setup instructions
 
 ## Configuration
 
@@ -41,7 +41,7 @@ The integration will automatically discover WLED devices on your local network. 
 If automatic discovery doesn't work, you can add a device manually:
 
 1. Go to Settings > Integrations > Add Integration
-2. Search for "WLED" and select it
+2. Search for "WLED JSONAPI" and select it
 3. Enter the IP address of your WLED device
 4. Follow the on-screen instructions
 

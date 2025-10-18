@@ -9,8 +9,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN, CONF_HOST
-from .coordinator import WLEDDataCoordinator
-from .api import WLEDAPIClient
+from .coordinator import WLEDJSONAPIDataCoordinator
+from .api import WLEDJSONAPIClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,10 +30,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     host = entry.data[CONF_HOST]
     
     # Create API client
-    client = WLEDAPIClient(host)
+    client = WLEDJSONAPIClient(host)
     
     # Create coordinator
-    coordinator = WLEDDataCoordinator(hass, client)
+    coordinator = WLEDJSONAPIDataCoordinator(hass, client)
     
     # Store coordinator and client in hass.data
     hass.data[DOMAIN][entry.entry_id] = {

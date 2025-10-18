@@ -1,4 +1,4 @@
-"""Light platform for WLED integration."""
+"""Light platform for WLED JSONAPI integration."""
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -17,19 +17,19 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, KEY_BRIGHTNESS, KEY_EFFECT, KEY_NAME, KEY_ON, KEY_PALETTE, KEY_PRESET
-from .coordinator import WLEDDataCoordinator
+from .coordinator import WLEDJSONAPIDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class WLEDLight(CoordinatorEntity, LightEntity):
-    """Representation of a WLED light."""
+class WLEDJSONAPILight(CoordinatorEntity, LightEntity):
+    """Representation of a WLED JSONAPI light."""
 
     _attr_has_entity_name = True
     _attr_name = None
 
-    def __init__(self, coordinator: WLEDDataCoordinator, entry: ConfigEntry) -> None:
-        """Initialize the WLED light."""
+    def __init__(self, coordinator: WLEDJSONAPIDataCoordinator, entry: ConfigEntry) -> None:
+        """Initialize the WLED JSONAPI light."""
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_light"
@@ -138,14 +138,14 @@ class WLEDLight(CoordinatorEntity, LightEntity):
             _LOGGER.warning("Effect '%s' not found in available effects", effect)
 
 
-class WLEDPresetLight(CoordinatorEntity, LightEntity):
-    """Representation of a WLED preset selector."""
+class WLEDJSONAPIPresetLight(CoordinatorEntity, LightEntity):
+    """Representation of a WLED JSONAPI preset selector."""
 
     _attr_has_entity_name = True
     _attr_name = "Preset"
 
-    def __init__(self, coordinator: WLEDDataCoordinator, entry: ConfigEntry) -> None:
-        """Initialize the WLED preset light."""
+    def __init__(self, coordinator: WLEDJSONAPIDataCoordinator, entry: ConfigEntry) -> None:
+        """Initialize the WLED JSONAPI preset light."""
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_preset"
@@ -223,13 +223,13 @@ class WLEDPresetLight(CoordinatorEntity, LightEntity):
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    """Set up WLED lights from a config entry."""
+    """Set up WLED JSONAPI lights from a config entry."""
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["coordinator"]
 
     # Add main light entity
-    async_add_entities([WLEDLight(coordinator, entry)])
+    async_add_entities([WLEDJSONAPILight(coordinator, entry)])
 
     # Add preset selector if presets are available
     if coordinator.data.get("effects"):
-        async_add_entities([WLEDPresetLight(coordinator, entry)])
+        async_add_entities([WLEDJSONAPIPresetLight(coordinator, entry)])

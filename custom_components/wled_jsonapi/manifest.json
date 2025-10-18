@@ -1,6 +1,6 @@
 {
-  "domain": "wled",
-  "name": "WLED",
+  "domain": "wled_jsonapi",
+  "name": "WLED JSONAPI",
   "version": "1.0.0",
   "documentation": "https://github.com/johnneerdael/wled-home-assistant",
   "issue_tracker": "https://github.com/johnneerdael/wled-home-assistant/issues",

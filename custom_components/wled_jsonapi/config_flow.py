@@ -1,4 +1,4 @@
-"""Config flow for WLED integration."""
+"""Config flow for WLED JSONAPI integration."""
 import logging
 from typing import Any, Dict, Optional
 
@@ -9,15 +9,15 @@ from homeassistant.const import CONF_HOST
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.typING import ConfigType
 
-from .api import WLEDAPIClient
+from .api import WLEDJSONAPIClient
 from .const import DOMAIN
 from .exceptions import WLEDConnectionError, WLEDInvalidResponseError
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class WLEDConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for WLED."""
+class WLEDJSONAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for WLED JSONAPI."""
 
     VERSION = 1
 
@@ -36,7 +36,7 @@ class WLEDConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             host = user_input[CONF_HOST]
             
             # Test connection
-            client = WLEDAPIClient(host)
+            client = WLEDJSONAPIClient(host)
             try:
                 if not await client.test_connection():
                     errors["base"] = "cannot_connect"
@@ -74,7 +74,7 @@ class WLEDConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._host = discovery_info.host
 
         # Try to get device info for unique ID
-        client = WLEDAPIClient(self._host)
+        client = WLEDJSONAPIClient(self._host)
         try:
             info = await client.get_info()
             mac = info.get("mac")
@@ -128,7 +128,7 @@ class WLEDConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             host = user_input[CONF_HOST]
             
             # Test connection
-            client = WLEDAPIClient(host)
+            client = WLEDJSONAPIClient(host)
             try:
                 if not await client.test_connection():
                     errors["base"] = "cannot_connect"

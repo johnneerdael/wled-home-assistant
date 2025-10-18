@@ -1,21 +1,21 @@
-"""Data coordinator for WLED integration."""
+"""Data coordinator for WLED JSONAPI integration."""
 import logging
 from typing import Any, Dict
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import WLEDAPIClient
+from .api import WLEDJSONAPIClient
 from .const import DOMAIN, UPDATE_INTERVAL
 from .exceptions import WLEDConnectionError, WLEDDeviceUnavailableError, WLEDInvalidResponseError
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class WLEDDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
-    """Class to manage fetching data from the WLED device."""
+class WLEDJSONAPIDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
+    """Class to manage fetching data from the WLED JSONAPI device."""
 
-    def __init__(self, hass: HomeAssistant, client: WLEDAPIClient) -> None:
+    def __init__(self, hass: HomeAssistant, client: WLEDJSONAPIClient) -> None:
         """Initialize."""
         self.client = client
         self._failed_polls = 0
@@ -36,13 +36,13 @@ class WLEDDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     async def _async_update_data(self) -> Dict[str, Any]:
         """Update data via library."""
         try:
-            _LOGGER.debug("Fetching data from WLED device")
+            _LOGGER.debug("Fetching data from WLED JSONAPI device")
             data = await self.client.get_full_state()
             
             # Reset failed polls counter on successful update
             self._failed_polls = 0
             if not self._available:
-                _LOGGER.info("WLED device is now available")
+                _LOGGER.info("WLED JSONAPI device is now available")
                 self._available = True
             
             return data
@@ -51,10 +51,10 @@ class WLEDDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             self._failed_polls += 1
             
             if self._failed_polls >= 3 and self._available:
-                _LOGGER.warning("WLED device marked as unavailable after %d failed polls", self._failed_polls)
+                _LOGGER.warning("WLED JSONAPI device marked as unavailable after %d failed polls", self._failed_polls)
                 self._available = False
             
-            _LOGGER.debug("Failed to update WLED data (attempt %d): %s", self._failed_polls, err)
+            _LOGGER.debug("Failed to update WLED JSONAPI data (attempt %d): %s", self._failed_polls, err)
             
             # Return last known data if available, otherwise raise UpdateFailed
             if self.data is not None:
@@ -63,7 +63,7 @@ class WLEDDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             raise UpdateFailed(f"Error communicating with WLED device: {err}") from err
 
         except Exception as err:
-            _LOGGER.error("Unexpected error updating WLED data: %s", err)
+            _LOGGER.error("Unexpected error updating WLED JSONAPI data: %s", err)
             self._failed_polls += 1
             
             if self._failed_polls >= 3 and self._available:
@@ -77,7 +77,7 @@ class WLEDDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     async def async_send_command(self, command: Dict[str, Any]) -> Dict[str, Any]:
         """Send a command to the WLED device."""
         try:
-            _LOGGER.debug("Sending command to WLED device: %s", command)
+            _LOGGER.debug("Sending command to WLED JSONAPI device: %s", command)
             response = await self.client.update_state(command)
             
             # Trigger an update after successful command
@@ -86,11 +86,11 @@ class WLEDDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             return response
 
         except (WLEDConnectionError, WLEDInvalidResponseError) as err:
-            _LOGGER.error("Failed to send command to WLED device: %s", err)
+            _LOGGER.error("Failed to send command to WLED JSONAPI device: %s", err)
             raise
 
         except Exception as err:
-            _LOGGER.error("Unexpected error sending command to WLED device: %s", err)
+            _LOGGER.error("Unexpected error sending command to WLED JSONAPI device: %s", err)
             raise
 
     async def async_turn_on(
@@ -99,7 +99,7 @@ class WLEDDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         transition: int | None = None,
         preset: int | None = None,
     ) -> Dict[str, Any]:
-        """Turn on the WLED device."""
+        """Turn on the WLED JSONAPI device."""
         command = {"on": True}
         
         if brightness is not None:
@@ -112,7 +112,7 @@ class WLEDDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         return await self.async_send_command(command)
 
     async def async_turn_off(self, transition: int | None = None) -> Dict[str, Any]:
-        """Turn off the WLED device."""
+        """Turn off the WLED JSONAPI device."""
         command = {"on": False}
         
         if transition is not None:
@@ -121,7 +121,7 @@ class WLEDDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         return await self.async_send_command(command)
 
     async def async_set_brightness(self, brightness: int, transition: int | None = None) -> Dict[str, Any]:
-        """Set the brightness of the WLED device."""
+        """Set the brightness of the WLED JSONAPI device."""
         command = {"bri": brightness}
         
         if transition is not None:
@@ -141,7 +141,7 @@ class WLEDDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         intensity: int | None = None,
         palette: int | None = None,
     ) -> Dict[str, Any]:
-        """Set an effect on the WLED device."""
+        """Set an effect on the WLED JSONAPI device."""
         command = {"seg": [{"fx": effect}]}
         
         if speed is not None:
