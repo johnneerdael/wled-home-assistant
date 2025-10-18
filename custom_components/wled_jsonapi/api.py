@@ -273,6 +273,28 @@ class WLEDJSONAPIClient:
             _LOGGER.error(error_msg)
             raise WLEDConnectionError(error_msg, host=self.host, original_error=err) from err
 
+    async def get_essential_presets(self) -> WLEDEssentialPresetsData:
+        """Get essential presets and playlists data from the WLED device."""
+        try:
+            response = await self._request("GET", API_PRESETS)
+            essential_presets_data = WLEDEssentialPresetsData.from_presets_response(response)
+
+            if not essential_presets_data.presets and not essential_presets_data.playlists:
+                _LOGGER.warning("No essential presets or playlists found on WLED device at %s", self.host)
+            else:
+                _LOGGER.debug(
+                    "Successfully retrieved %d essential presets and %d essential playlists from %s",
+                    len(essential_presets_data.presets),
+                    len(essential_presets_data.playlists),
+                    self.host
+                )
+
+            return essential_presets_data
+        except Exception as err:
+            error_msg = f"Error getting essential presets from WLED device at {self.host}: {err}"
+            _LOGGER.error(error_msg)
+            raise WLEDConnectionError(error_msg, host=self.host, original_error=err) from err
+
     async def activate_playlist(self, playlist: int) -> Dict[str, Any]:
         """Activate a playlist on the WLED device."""
         if not isinstance(playlist, int) or playlist < 0:

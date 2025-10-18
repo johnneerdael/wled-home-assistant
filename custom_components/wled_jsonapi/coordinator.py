@@ -58,60 +58,52 @@ class WLEDJSONAPIDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
         _LOGGER.info("Initialized WLED coordinator for device at %s", client.host)
 
-    def _get_error_config(self, exception_type: Type[Exception]) -> Dict[str, Any]:
+    def _handle_error_simplified(self, error: Exception) -> Dict[str, Any]:
         """
-        Get error configuration for exception type.
+        Handle error with simplified approach appropriate for WLED devices.
 
-        Returns a dictionary with standardized error handling configuration:
+        Returns a dictionary with basic error handling configuration:
         - connection_state: The state to set ("error", "disconnected", "connected")
-        - error_type: Type description for logging ("timeout", "network", etc.)
+        - error_type: Type description for logging
         - increment_failed_polls: Whether to increment the failed polls counter
         - can_return_cached: Whether cached data can be returned for this error
 
         Args:
-            exception_type: The exception class to get configuration for
+            error: The exception to handle
 
         Returns:
             Dictionary containing error handling configuration
         """
-        error_configs = {
-            WLEDTimeoutError: {
+        # Simplified error handling for WLED HTTP client
+        if isinstance(error, (WLEDTimeoutError, WLEDNetworkError)):
+            return {
                 "connection_state": "error",
-                "error_type": "timeout",
-                "increment_failed_polls": True,
-                "can_return_cached": True,
-            },
-            WLEDNetworkError: {
-                "connection_state": "disconnected",
                 "error_type": "network",
                 "increment_failed_polls": True,
                 "can_return_cached": True,
-            },
-            WLEDAuthenticationError: {
+            }
+        elif isinstance(error, WLEDAuthenticationError):
+            return {
                 "connection_state": "error",
                 "error_type": "authentication",
                 "increment_failed_polls": False,
                 "can_return_cached": False,
-            },
-            WLEDInvalidResponseError: {
-                "connection_state": "error",
-                "error_type": "invalid_response",
-                "increment_failed_polls": True,
-                "can_return_cached": True,
-            },
-            WLEDConnectionError: {
+            }
+        elif isinstance(error, (WLEDInvalidResponseError, WLEDConnectionError)):
+            return {
                 "connection_state": "error",
                 "error_type": "connection",
                 "increment_failed_polls": True,
                 "can_return_cached": True,
-            },
-        }
-        return error_configs.get(exception_type, {
-            "connection_state": "error",
-            "error_type": "unexpected",
-            "increment_failed_polls": True,
-            "can_return_cached": True,
-        })
+            }
+        else:
+            # Default handling for unexpected errors
+            return {
+                "connection_state": "error",
+                "error_type": "unexpected",
+                "increment_failed_polls": True,
+                "can_return_cached": True,
+            }
 
     def _handle_update_error(
         self,
@@ -132,15 +124,14 @@ class WLEDJSONAPIDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             exception: The exception that occurred
             operation: Description of the operation being performed (e.g., "updating", "fetching")
         """
-        exception_type = type(exception)
-        config = self._get_error_config(exception_type)
+        config = self._handle_error_simplified(exception)
 
         # Increment failed polls counter if configured
         if config["increment_failed_polls"]:
             self._failed_polls += 1
 
         # Generate error message
-        error_msg = f"{config['error_type'].title()} error {operation} WLED device at {self.client.host}"
+        error_msg = f"{config['error_type'].capitalize()} error {operation} WLED device at {self.client.host}"
 
         # Log the error
         if config["increment_failed_polls"]:
@@ -234,8 +225,7 @@ class WLEDJSONAPIDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         Returns:
             True if cached data should be returned, False otherwise
         """
-        exception_type = type(exception)
-        config = self._get_error_config(exception_type)
+        config = self._handle_error_simplified(exception)
         return config["can_return_cached"] and self.data is not None
 
     @property
@@ -328,8 +318,8 @@ class WLEDJSONAPIDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 return self.data
 
             # Generate appropriate error message for UpdateFailed
-            config = self._get_error_config(type(err))
-            error_msg = f"{config['error_type'].title()} error updating WLED device at {self.client.host}"
+            config = self._handle_error_simplified(err)
+            error_msg = f"{config['error_type'].capitalize()} error updating WLED device at {self.client.host}"
             raise UpdateFailed(error_msg) from err
 
         except Exception as err:
