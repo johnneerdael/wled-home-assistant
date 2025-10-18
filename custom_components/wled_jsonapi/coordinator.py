@@ -1,7 +1,7 @@
 """Data coordinator for WLED JSONAPI integration."""
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Type
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -54,6 +54,186 @@ class WLEDJSONAPIDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         )
 
         _LOGGER.info("Initialized WLED coordinator for device at %s", client.host)
+
+    def _get_error_config(self, exception_type: Type[Exception]) -> Dict[str, Any]:
+        """
+        Get error configuration for exception type.
+
+        Returns a dictionary with standardized error handling configuration:
+        - connection_state: The state to set ("error", "disconnected", "connected")
+        - error_type: Type description for logging ("timeout", "network", etc.)
+        - increment_failed_polls: Whether to increment the failed polls counter
+        - can_return_cached: Whether cached data can be returned for this error
+
+        Args:
+            exception_type: The exception class to get configuration for
+
+        Returns:
+            Dictionary containing error handling configuration
+        """
+        error_configs = {
+            WLEDTimeoutError: {
+                "connection_state": "error",
+                "error_type": "timeout",
+                "increment_failed_polls": True,
+                "can_return_cached": True,
+            },
+            WLEDNetworkError: {
+                "connection_state": "disconnected",
+                "error_type": "network",
+                "increment_failed_polls": True,
+                "can_return_cached": True,
+            },
+            WLEDAuthenticationError: {
+                "connection_state": "error",
+                "error_type": "authentication",
+                "increment_failed_polls": False,
+                "can_return_cached": False,
+            },
+            WLEDInvalidResponseError: {
+                "connection_state": "error",
+                "error_type": "invalid_response",
+                "increment_failed_polls": True,
+                "can_return_cached": True,
+            },
+            WLEDConnectionError: {
+                "connection_state": "error",
+                "error_type": "connection",
+                "increment_failed_polls": True,
+                "can_return_cached": True,
+            },
+        }
+        return error_configs.get(exception_type, {
+            "connection_state": "error",
+            "error_type": "unexpected",
+            "increment_failed_polls": True,
+            "can_return_cached": True,
+        })
+
+    def _handle_update_error(
+        self,
+        exception: Exception,
+        operation: str
+    ) -> None:
+        """
+        Handle error during data update with standardized logic.
+
+        This method centralizes the common error handling pattern used in update operations:
+        1. Increment failed polls counter (if configured)
+        2. Generate standardized error message
+        3. Log the error with appropriate level
+        4. Set connection state
+        5. Log error if max failed polls threshold is reached
+
+        Args:
+            exception: The exception that occurred
+            operation: Description of the operation being performed (e.g., "updating", "fetching")
+        """
+        exception_type = type(exception)
+        config = self._get_error_config(exception_type)
+
+        # Increment failed polls counter if configured
+        if config["increment_failed_polls"]:
+            self._failed_polls += 1
+
+        # Generate error message
+        error_msg = f"{config['error_type'].title()} error {operation} WLED device at {self.client.host}"
+
+        # Log the error
+        if config["increment_failed_polls"]:
+            _LOGGER.warning("%s (attempt %d): %s", error_msg, self._failed_polls, exception)
+        else:
+            _LOGGER.error("%s: %s", error_msg, exception)
+
+        # Set connection state
+        self._set_connection_state(config["connection_state"], error_msg)
+
+        # Log if max failed polls reached
+        if (config["increment_failed_polls"] and
+            self._failed_polls >= MAX_FAILED_POLLS):
+            _LOGGER.error(
+                "WLED device at %s marked as unavailable after %d consecutive %s errors",
+                self.client.host, self._failed_polls, config["error_type"]
+            )
+
+    def _handle_command_error(
+        self,
+        exception: Exception,
+        operation: str,
+        command: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Handle error during command execution with standardized logic.
+
+        This method centralizes error handling for command operations:
+        1. Generate standardized error message
+        2. Determine appropriate connection state
+        3. Log the error
+        4. Set connection state
+
+        Args:
+            exception: The exception that occurred
+            operation: Description of the command operation (e.g., "sending command")
+            command: Optional command data that was being sent (for context)
+        """
+        exception_type = type(exception)
+
+        # Generate error message
+        error_msg = f"{operation} on WLED device at {self.client.host}"
+
+        # Determine connection state
+        if exception_type == WLEDNetworkError:
+            connection_state = "disconnected"
+        else:
+            connection_state = "error"
+
+        # Log and set state
+        _LOGGER.error(f"{error_msg}: {exception}")
+        self._set_connection_state(connection_state, error_msg)
+
+    def _handle_preset_error(
+        self,
+        exception: Exception,
+        operation: str
+    ) -> None:
+        """
+        Handle error during preset update with standardized logic.
+
+        This method centralizes error handling for preset operations:
+        1. Increment preset failed updates counter
+        2. Log warning with attempt count and exception details
+
+        Note: Preset update errors don't fail the entire main data update,
+        so errors are logged as warnings rather than errors.
+
+        Args:
+            exception: The exception that occurred during preset operation
+            operation: Description of the preset operation (e.g., "update presets data")
+        """
+        self._presets_failed_updates += 1
+        _LOGGER.warning(
+            "Failed to %s from %s due to %s error (attempt %d): %s",
+            operation, self.client.host, type(exception).__name__.lower().replace('wled', ''),
+            self._presets_failed_updates, exception
+        )
+
+    def _should_return_cached_data(self, exception: Exception) -> bool:
+        """
+        Determine if cached data should be returned for this exception.
+
+        Uses the error configuration to decide whether cached data can be returned
+        for the given exception type. This allows the system to gracefully degrade
+        by returning stale data when the device is temporarily unavailable.
+
+        Args:
+            exception: The exception that occurred
+
+        Returns:
+            True if cached data should be returned, False otherwise
+        """
+        exception_type = type(exception)
+        config = self._get_error_config(exception_type)
+        return config["can_return_cached"] and self.data is not None
 
     @property
     def available(self) -> bool:
@@ -124,101 +304,31 @@ class WLEDJSONAPIDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
             return data
 
-        except WLEDTimeoutError as err:
-            self._failed_polls += 1
-            error_msg = f"WLED device at {self.client.host} request timed out"
-            _LOGGER.warning("%s (attempt %d): %s", error_msg, self._failed_polls, err)
-            self._set_connection_state("error", error_msg)
+        except (WLEDTimeoutError, WLEDNetworkError, WLEDAuthenticationError,
+                WLEDInvalidResponseError, WLEDConnectionError) as err:
+            # Handle all known WLED exceptions with standardized logic
+            self._handle_update_error(err, "updating")
 
-            if self._failed_polls >= MAX_FAILED_POLLS:
-                _LOGGER.error(
-                    "WLED device at %s marked as unavailable after %d consecutive timeout errors",
-                    self.client.host, self._failed_polls
-                )
-
-            if self.data is not None:
-                _LOGGER.debug("Returning last known data due to timeout error")
+            # Return cached data if available and configured
+            if self._should_return_cached_data(err):
+                _LOGGER.debug("Returning last known data due to %s error", type(err).__name__)
                 return self.data
 
-            raise UpdateFailed(error_msg) from err
-
-        except WLEDNetworkError as err:
-            self._failed_polls += 1
-            error_msg = f"Network error connecting to WLED device at {self.client.host}"
-            _LOGGER.warning("%s (attempt %d): %s", error_msg, self._failed_polls, err)
-            self._set_connection_state("disconnected", error_msg)
-
-            if self._failed_polls >= MAX_FAILED_POLLS:
-                _LOGGER.error(
-                    "WLED device at %s marked as unavailable after %d consecutive network errors",
-                    self.client.host, self._failed_polls
-                )
-
-            if self.data is not None:
-                _LOGGER.debug("Returning last known data due to network error")
-                return self.data
-
-            raise UpdateFailed(error_msg) from err
-
-        except WLEDAuthenticationError as err:
-            error_msg = f"WLED device at {self.client.host} requires authentication"
-            _LOGGER.error(error_msg)
-            self._set_connection_state("error", error_msg)
-            raise UpdateFailed(error_msg) from err
-
-        except WLEDInvalidResponseError as err:
-            self._failed_polls += 1
-            error_msg = f"Invalid response from WLED device at {self.client.host}"
-            _LOGGER.warning("%s (attempt %d): %s", error_msg, self._failed_polls, err)
-            self._set_connection_state("error", error_msg)
-
-            if self._failed_polls >= MAX_FAILED_POLLS:
-                _LOGGER.error(
-                    "WLED device at %s marked as unavailable after %d consecutive invalid response errors",
-                    self.client.host, self._failed_polls
-                )
-
-            if self.data is not None:
-                _LOGGER.debug("Returning last known data due to invalid response error")
-                return self.data
-
-            raise UpdateFailed(error_msg) from err
-
-        except WLEDConnectionError as err:
-            self._failed_polls += 1
-            error_msg = f"Connection error with WLED device at {self.client.host}"
-            _LOGGER.warning("%s (attempt %d): %s", error_msg, self._failed_polls, err)
-            self._set_connection_state("error", error_msg)
-
-            if self._failed_polls >= MAX_FAILED_POLLS:
-                _LOGGER.error(
-                    "WLED device at %s marked as unavailable after %d consecutive connection errors",
-                    self.client.host, self._failed_polls
-                )
-
-            if self.data is not None:
-                _LOGGER.debug("Returning last known data due to connection error")
-                return self.data
-
+            # Generate appropriate error message for UpdateFailed
+            config = self._get_error_config(type(err))
+            error_msg = f"{config['error_type'].title()} error updating WLED device at {self.client.host}"
             raise UpdateFailed(error_msg) from err
 
         except Exception as err:
-            self._failed_polls += 1
-            error_msg = f"Unexpected error updating WLED device at {self.client.host}"
-            _LOGGER.exception("%s (attempt %d): %s", error_msg, self._failed_polls, err)
-            self._set_connection_state("error", error_msg)
+            # Handle unexpected errors
+            self._handle_update_error(err, "updating")
 
-            if self._failed_polls >= MAX_FAILED_POLLS:
-                _LOGGER.error(
-                    "WLED device at %s marked as unavailable after %d consecutive unexpected errors",
-                    self.client.host, self._failed_polls
-                )
-
-            if self.data is not None:
+            if self._should_return_cached_data(err):
                 _LOGGER.debug("Returning last known data due to unexpected error")
                 return self.data
 
-            raise UpdateFailed(f"{error_msg}: {err}") from err
+            error_msg = f"Unexpected error updating WLED device at {self.client.host}: {err}"
+            raise UpdateFailed(error_msg) from err
 
     async def async_send_command(self, command: Dict[str, Any]) -> Dict[str, Any]:
         """Send a command to the WLED device with enhanced error handling."""
@@ -237,35 +347,19 @@ class WLEDJSONAPIDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             _LOGGER.debug("Successfully sent command to WLED device at %s", self.client.host)
             return response
 
-        except WLEDTimeoutError as err:
-            error_msg = f"Command to WLED device at {self.client.host} timed out"
-            _LOGGER.error(error_msg)
-            self._set_connection_state("error", error_msg)
-            raise
-
-        except WLEDNetworkError as err:
-            error_msg = f"Network error sending command to WLED device at {self.client.host}"
-            _LOGGER.error(error_msg)
-            self._set_connection_state("disconnected", error_msg)
-            raise
-
-        except WLEDAuthenticationError as err:
-            error_msg = f"WLED device at {self.client.host} requires authentication for command execution"
-            _LOGGER.error(error_msg)
-            self._set_connection_state("error", error_msg)
-            raise
-
-        except (WLEDConnectionError, WLEDInvalidResponseError, WLEDCommandError) as err:
-            error_msg = f"Failed to send command to WLED device at {self.client.host}: {err}"
-            _LOGGER.error(error_msg)
-            self._set_connection_state("error", error_msg)
+        except (WLEDTimeoutError, WLEDNetworkError, WLEDAuthenticationError,
+                WLEDConnectionError, WLEDInvalidResponseError, WLEDCommandError) as err:
+            # Handle all known WLED exceptions with standardized logic
+            self._handle_command_error(err, "sending command", command)
             raise
 
         except Exception as err:
-            error_msg = f"Unexpected error sending command to WLED device at {self.client.host}: {err}"
-            _LOGGER.exception(error_msg)
-            self._set_connection_state("error", error_msg)
-            raise WLEDCommandError(error_msg, command=command, host=self.client.host, original_error=err) from err
+            # Handle unexpected errors
+            self._handle_command_error(err, "sending command", command)
+            raise WLEDCommandError(
+                f"Unexpected error sending command to WLED device at {self.client.host}: {err}",
+                command=command, host=self.client.host, original_error=err
+            ) from err
 
     async def async_turn_on(
         self,
@@ -347,45 +441,14 @@ class WLEDJSONAPIDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     self.client.host, len(presets_data.presets), len(presets_data.playlists)
                 )
 
-            except WLEDTimeoutError as err:
-                self._presets_failed_updates += 1
-                _LOGGER.warning(
-                    "Failed to update presets data from %s due to timeout (attempt %d): %s",
-                    self.client.host, self._presets_failed_updates, err
-                )
-                # Don't fail the entire update if presets can't be fetched
-
-            except WLEDNetworkError as err:
-                self._presets_failed_updates += 1
-                _LOGGER.warning(
-                    "Failed to update presets data from %s due to network error (attempt %d): %s",
-                    self.client.host, self._presets_failed_updates, err
-                )
-                # Don't fail the entire update if presets can't be fetched
-
-            except WLEDPresetError as err:
-                self._presets_failed_updates += 1
-                _LOGGER.warning(
-                    "Failed to update presets data from %s due to preset error (attempt %d): %s",
-                    self.client.host, self._presets_failed_updates, err
-                )
-                # Don't fail the entire update if presets can't be fetched
-
-            except (WLEDConnectionError, WLEDInvalidResponseError) as err:
-                self._presets_failed_updates += 1
-                _LOGGER.warning(
-                    "Failed to update presets data from %s due to connection/response error (attempt %d): %s",
-                    self.client.host, self._presets_failed_updates, err
-                )
-                # Don't fail the entire update if presets can't be fetched
+            except (WLEDTimeoutError, WLEDNetworkError, WLEDPresetError,
+                    WLEDConnectionError, WLEDInvalidResponseError) as err:
+                # Handle all known preset-related errors with standardized logic
+                self._handle_preset_error(err, "update presets data")
 
             except Exception as err:
-                self._presets_failed_updates += 1
-                _LOGGER.error(
-                    "Unexpected error updating presets data from %s (attempt %d): %s",
-                    self.client.host, self._presets_failed_updates, err
-                )
-                # Don't fail the entire update if presets can't be fetched
+                # Handle unexpected errors
+                self._handle_preset_error(err, "update presets data")
 
     def get_presets_data(self) -> Optional[WLEDPresetsData]:
         """Get cached presets data."""
@@ -443,27 +506,15 @@ class WLEDJSONAPIDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                         playlist_id, playlist.name if playlist else "Unknown", self.client.host)
             return response
 
-        except WLEDTimeoutError as err:
-            error_msg = f"Playlist activation timed out for playlist {playlist_id} on WLED device at {self.client.host}"
-            _LOGGER.error(error_msg)
-            raise WLEDPlaylistLoadError(error_msg, playlist_id=playlist_id) from err
-
-        except WLEDNetworkError as err:
-            error_msg = f"Network error during playlist activation for playlist {playlist_id} on WLED device at {self.client.host}"
-            _LOGGER.error(error_msg)
-            raise WLEDPlaylistLoadError(error_msg, playlist_id=playlist_id) from err
-
-        except WLEDAuthenticationError as err:
-            error_msg = f"Authentication required for playlist activation on WLED device at {self.client.host}"
-            _LOGGER.error(error_msg)
-            raise WLEDPlaylistLoadError(error_msg, playlist_id=playlist_id) from err
-
-        except (WLEDConnectionError, WLEDInvalidResponseError, WLEDCommandError) as err:
+        except (WLEDTimeoutError, WLEDNetworkError, WLEDAuthenticationError,
+                WLEDConnectionError, WLEDInvalidResponseError, WLEDCommandError) as err:
+            # Handle all known WLED exceptions with standardized logic
             error_msg = f"Failed to activate playlist {playlist_id} on WLED device at {self.client.host}: {err}"
             _LOGGER.error(error_msg)
             raise WLEDPlaylistLoadError(error_msg, playlist_id=playlist_id) from err
 
         except Exception as err:
+            # Handle unexpected errors
             error_msg = f"Unexpected error activating playlist {playlist_id} on WLED device at {self.client.host}: {err}"
             _LOGGER.exception(error_msg)
             raise WLEDPlaylistLoadError(error_msg, playlist_id=playlist_id) from err

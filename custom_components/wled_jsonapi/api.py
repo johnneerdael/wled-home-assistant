@@ -5,7 +5,7 @@ import logging
 from typing import Any, Dict, Optional
 
 import aiohttp
-from aiohttp import ClientError, ClientError, ClientSession, ServerTimeoutError
+from aiohttp import ClientError, ClientSession, ServerTimeoutError
 
 from .const import API_BASE, API_INFO, API_PRESETS, API_STATE, TIMEOUT
 from .exceptions import (
@@ -43,6 +43,53 @@ class WLEDJSONAPIClient:
             self._session = ClientSession(timeout=aiohttp.ClientTimeout(total=TIMEOUT))
             self._close_session = True
 
+    def _build_url(self, endpoint: str) -> str:
+        """
+        Build the full URL for the given endpoint.
+
+        Handles the special case of the presets endpoint which is not under /json.
+
+        Args:
+            endpoint: The API endpoint to build URL for
+
+        Returns:
+            Complete URL for the endpoint
+        """
+        # Handle presets endpoint separately since it's not under /json
+        if endpoint == API_PRESETS:
+            return f"http://{self.host}{endpoint}"
+        else:
+            return f"{self.base_url}{endpoint}"
+
+    async def _execute_http_request(self, method: str, url: str, data: Optional[Dict[str, Any]] = None) -> aiohttp.ClientResponse:
+        """
+        Execute the HTTP request and return the response.
+
+        Handles GET and POST requests with appropriate logging and data handling.
+
+        Args:
+            method: HTTP method (GET or POST)
+            url: Full URL to request
+            data: Optional JSON data for POST requests
+
+        Returns:
+            aiohttp ClientResponse object
+
+        Raises:
+            ValueError: If unsupported HTTP method is provided
+        """
+        if method.upper() == "GET":
+            async with self._session.get(url) as response:
+                return response
+        elif method.upper() == "POST":
+            _LOGGER.debug("Sending POST data to %s: %s", url, data)
+            async with self._session.post(url, json=data) as response:
+                return response
+        else:
+            error_msg = f"Unsupported HTTP method: {method}"
+            _LOGGER.error(error_msg)
+            raise ValueError(error_msg)
+
     async def _request(
         self,
         method: str,
@@ -50,27 +97,12 @@ class WLEDJSONAPIClient:
         data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Make a simple request to the WLED API with enhanced error handling."""
-        # Handle presets endpoint separately since it's not under /json
-        if endpoint == API_PRESETS:
-            url = f"http://{self.host}{endpoint}"
-        else:
-            url = f"{self.base_url}{endpoint}"
-
+        url = self._build_url(endpoint)
         _LOGGER.debug("Making %s request to %s (host: %s, endpoint: %s)", method, url, self.host, endpoint)
 
         try:
-            # Determine which HTTP method to use
-            if method.upper() == "GET":
-                async with self._session.get(url) as response:
-                    return await self._handle_response(response, url, endpoint)
-            elif method.upper() == "POST":
-                _LOGGER.debug("Sending POST data to %s: %s", url, data)
-                async with self._session.post(url, json=data) as response:
-                    return await self._handle_response(response, url, endpoint)
-            else:
-                error_msg = f"Unsupported HTTP method: {method}"
-                _LOGGER.error(error_msg)
-                raise ValueError(error_msg)
+            response = await self._execute_http_request(method, url, data)
+            return await self._handle_response(response, url, endpoint)
 
         except ServerTimeoutError as err:
             error_msg = f"Request to WLED device at {self.host} timed out after {TIMEOUT} seconds"
@@ -83,22 +115,8 @@ class WLEDJSONAPIClient:
             raise WLEDNetworkError(error_msg, host=self.host, operation=f"{method} {endpoint}", original_error=err) from err
 
         except aiohttp.ClientResponseError as err:
-            if err.status == 401:
-                error_msg = f"WLED device at {self.host} requires authentication"
-                _LOGGER.error(error_msg)
-                raise WLEDAuthenticationError(error_msg, host=self.host) from err
-            elif err.status == 404:
-                error_msg = f"WLED device at {self.host} returned 404 Not Found for endpoint {endpoint}. The device may not support this feature."
-                _LOGGER.error(error_msg)
-                raise WLEDInvalidResponseError(error_msg, host=self.host, endpoint=endpoint) from err
-            elif 500 <= err.status < 600:
-                error_msg = f"WLED device at {self.host} encountered a server error (HTTP {err.status}). The device may be overloaded or have an internal error."
-                _LOGGER.error(error_msg)
-                raise WLEDConnectionError(error_msg, host=self.host, operation=f"{method} {endpoint}", original_error=err) from err
-            else:
-                error_msg = f"WLED device at {self.host} returned HTTP {err.status}: {err.message}"
-                _LOGGER.error(error_msg)
-                raise WLEDConnectionError(error_msg, host=self.host, operation=f"{method} {endpoint}", original_error=err) from err
+            self._handle_response_error(err, method, endpoint)
+            # This method will always raise an exception
 
         except (ClientError, asyncio.TimeoutError) as err:
             error_msg = f"Network error connecting to WLED device at {self.host}: {err}. Please check your network connection and the device's IP address."
@@ -113,6 +131,43 @@ class WLEDJSONAPIClient:
         except Exception as err:
             error_msg = f"Unexpected error connecting to WLED device at {self.host}: {err}"
             _LOGGER.exception(error_msg)
+            raise WLEDConnectionError(error_msg, host=self.host, operation=f"{method} {endpoint}", original_error=err) from err
+
+    def _handle_response_error(self, err: aiohttp.ClientResponseError, method: str, endpoint: str) -> None:
+        """
+        Handle HTTP response errors with appropriate exception types.
+
+        Maps HTTP status codes to specific WLED exception types for better error handling:
+        - 401: Authentication required
+        - 404: Endpoint not found
+        - 5xx: Server errors
+        - Other: Connection errors
+
+        Args:
+            err: The aiohttp ClientResponseError that occurred
+            method: HTTP method being used
+            endpoint: API endpoint being requested
+
+        Raises:
+            WLEDAuthenticationError: For 401 status codes
+            WLEDInvalidResponseError: For 404 status codes
+            WLEDConnectionError: For other HTTP errors
+        """
+        if err.status == 401:
+            error_msg = f"WLED device at {self.host} requires authentication"
+            _LOGGER.error(error_msg)
+            raise WLEDAuthenticationError(error_msg, host=self.host) from err
+        elif err.status == 404:
+            error_msg = f"WLED device at {self.host} returned 404 Not Found for endpoint {endpoint}. The device may not support this feature."
+            _LOGGER.error(error_msg)
+            raise WLEDInvalidResponseError(error_msg, host=self.host, endpoint=endpoint) from err
+        elif 500 <= err.status < 600:
+            error_msg = f"WLED device at {self.host} encountered a server error (HTTP {err.status}). The device may be overloaded or have an internal error."
+            _LOGGER.error(error_msg)
+            raise WLEDConnectionError(error_msg, host=self.host, operation=f"{method} {endpoint}", original_error=err) from err
+        else:
+            error_msg = f"WLED device at {self.host} returned HTTP {err.status}: {err.message}"
+            _LOGGER.error(error_msg)
             raise WLEDConnectionError(error_msg, host=self.host, operation=f"{method} {endpoint}", original_error=err) from err
 
     async def _handle_response(self, response: aiohttp.ClientResponse, url: str, endpoint: str) -> Dict[str, Any]:

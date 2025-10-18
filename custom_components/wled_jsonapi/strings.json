@@ -1,0 +1,86 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "WLED JSONAPI",
+        "description": "Connect to your WLED device",
+        "data": {
+          "host": "Host"
+        },
+        "data_description": {
+          "host": "The IP address or hostname of your WLED device"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Discovered WLED Device",
+        "description": "Do you want to set up the discovered WLED device '{name}' at {host}?"
+      },
+      "reconfigure": {
+        "title": "Reconfigure WLED",
+        "description": "Update the configuration for your WLED device",
+        "data": {
+          "host": "Host"
+        },
+        "data_description": {
+          "host": "The IP address or hostname of your WLED device"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the WLED device. Please verify the IP address and that the device is powered on.",
+      "invalid_auth": "Authentication failed. WLED devices typically don't require authentication.",
+      "unknown": "An unexpected error occurred while setting up the WLED device.",
+      "device_not_found": "No WLED device found at the specified address.",
+      "invalid_response": "The WLED device returned an invalid response."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "host": "Host"
+        },
+        "data_description": {
+          "host": "The IP address or hostname of your WLED device"
+        }
+      }
+    }
+  },
+  "entity": {
+    "light": {
+      "default": "WLED"
+    },
+    "select": {
+      "preset": {
+        "name": "Preset",
+        "state": {
+          "1": "Preset 1",
+          "2": "Preset 2",
+          "3": "Preset 3",
+          "4": "Preset 4",
+          "5": "Preset 5"
+        }
+      },
+      "playlist": {
+        "name": "Playlist",
+        "state": {
+          "1": "Playlist 1",
+          "2": "Playlist 2",
+          "3": "Playlist 3",
+          "4": "Playlist 4",
+          "5": "Playlist 5"
+        }
+      }
+    }
+  },
+  "services": {
+    "apply_preset": {
+      "name": "Apply Preset",
+      "description": "Apply a specific preset to the WLED device"
+    },
+    "activate_playlist": {
+      "name": "Activate Playlist",
+      "description": "Activate a specific playlist on the WLED device"
+    }
+  }
+}

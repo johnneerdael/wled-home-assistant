@@ -23,7 +23,7 @@ def mock_session():
 @pytest.fixture
 def wled_client(mock_session):
     """Create a WLED API client for testing."""
-    return WLEDAPIClient("192.168.1.100", mock_session)
+    return WLEDJSONAPIClient("192.168.1.100", mock_session)
 
 
 @pytest.mark.asyncio
@@ -243,7 +243,7 @@ async def test_max_retries_exceeded(wled_client, mock_session):
 async def test_close_session(wled_client, mock_session):
     """Test closing the HTTP session."""
     # Create client that manages its own session
-    client = WLEDAPIClient("192.168.1.100")
+    client = WLEDJSONAPIClient("192.168.1.100")
     
     # Mock the session close method
     client._session.close = AsyncMock()
