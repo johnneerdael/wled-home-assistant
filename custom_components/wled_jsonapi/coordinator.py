@@ -10,17 +10,14 @@ from .api import WLEDJSONAPIClient
 from .const import DOMAIN, UPDATE_INTERVAL, PRESETS_UPDATE_INTERVAL, MAX_FAILED_POLLS
 from .exceptions import (
     WLEDConnectionError,
-    WLEDDeviceUnavailableError,
     WLEDInvalidResponseError,
     WLEDTimeoutError,
     WLEDNetworkError,
     WLEDAuthenticationError,
     WLEDCommandError,
     WLEDPresetError,
-    WLEDPresetNotFoundError,
     WLEDPresetLoadError,
     WLEDPlaylistError,
-    WLEDPlaylistNotFoundError,
     WLEDPlaylistLoadError,
 )
 from .models import (
