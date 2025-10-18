@@ -7,7 +7,7 @@ from homeassistant import config_entries
 from homeassistant.components import zeroconf
 from homeassistant.const import CONF_HOST
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers.typING import ConfigType
+from homeassistant.helpers.typing import ConfigType
 
 from .api import WLEDJSONAPIClient
 from .const import DOMAIN
