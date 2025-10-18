@@ -23,7 +23,13 @@ from .exceptions import (
     WLEDPlaylistNotFoundError,
     WLEDPlaylistLoadError,
 )
-from .models import WLEDPresetsData, WLEDPreset, WLEDPlaylist
+from .models import (
+    WLEDPresetsData,
+    WLEDPreset,
+    WLEDPlaylist,
+    WLEDEssentialState,
+    WLEDEssentialPresetsData,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -291,8 +297,17 @@ class WLEDJSONAPIDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     async def _async_update_data(self) -> Dict[str, Any]:
         """Update data via library with enhanced error handling and state tracking."""
         try:
-            _LOGGER.debug("Fetching data from WLED device at %s", self.client.host)
-            data = await self.client.get_full_state()
+            _LOGGER.debug("Fetching essential data from WLED device at %s", self.client.host)
+
+            # Use streamlined essential data extraction for better performance
+            essential_state = await self.client.get_essential_state()
+
+            # Convert essential state to dictionary for Home Assistant
+            data = essential_state.to_state_dict()
+
+            # Include raw essential data for advanced features
+            if essential_state.raw_state:
+                data["_raw_state"] = essential_state.raw_state
 
             # Check if presets need to be updated
             await self._async_update_presets_if_needed()
@@ -300,7 +315,8 @@ class WLEDJSONAPIDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             # Reset failed polls counter on successful update
             self._failed_polls = 0
             self._set_connection_state("connected")
-            _LOGGER.debug("Successfully updated data from WLED device at %s", self.client.host)
+            _LOGGER.debug("Successfully updated essential data from WLED device at %s: %s",
+                         self.client.host, list(data.keys()))
 
             return data
 
@@ -328,6 +344,44 @@ class WLEDJSONAPIDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 return self.data
 
             error_msg = f"Unexpected error updating WLED device at {self.client.host}: {err}"
+            raise UpdateFailed(error_msg) from err
+
+    async def async_get_essential_state(self) -> WLEDEssentialState:
+        """
+        Get essential state data from the WLED device.
+
+        This method provides direct access to the streamlined essential state
+        without going through the coordinator's data caching mechanism.
+
+        Returns:
+            WLEDEssentialState object containing only essential parameters
+
+        Raises:
+            UpdateFailed: If the device is unavailable or returns invalid data
+        """
+        try:
+            return await self.client.get_essential_state()
+        except Exception as err:
+            error_msg = f"Failed to get essential state from WLED device at {self.client.host}: {err}"
+            raise UpdateFailed(error_msg) from err
+
+    async def async_get_essential_presets(self) -> WLEDEssentialPresetsData:
+        """
+        Get essential presets data from the WLED device.
+
+        This method provides direct access to the streamlined essential presets
+        without going through the coordinator's caching mechanism.
+
+        Returns:
+            WLEDEssentialPresetsData object containing only essential preset information
+
+        Raises:
+            UpdateFailed: If the device is unavailable or returns invalid data
+        """
+        try:
+            return await self.client.get_essential_presets()
+        except Exception as err:
+            error_msg = f"Failed to get essential presets from WLED device at {self.client.host}: {err}"
             raise UpdateFailed(error_msg) from err
 
     async def async_send_command(self, command: Dict[str, Any]) -> Dict[str, Any]:
@@ -430,25 +484,38 @@ class WLEDJSONAPIDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             now - self._presets_last_updated >= PRESETS_UPDATE_INTERVAL):
 
             try:
-                _LOGGER.debug("Updating presets data from WLED device at %s", self.client.host)
-                presets_data = await self.client.get_presets()
-                self._presets_data = presets_data
+                _LOGGER.debug("Updating essential presets data from WLED device at %s", self.client.host)
+
+                # Use streamlined essential presets extraction for better performance
+                essential_presets_data = await self.client.get_essential_presets()
+
+                # Convert essential presets to the full format for backward compatibility
+                self._presets_data = WLEDPresetsData.from_dict({
+                    str(preset.id): {"n": preset.name} for preset in essential_presets_data.presets.values()
+                })
+
+                # Add playlists
+                for playlist in essential_presets_data.playlists.values():
+                    self._presets_data.playlists[playlist.id] = WLEDPlaylist.from_playlist_response(
+                        str(playlist.id), {"n": playlist.name}
+                    )
+
                 self._presets_last_updated = now
                 self._presets_failed_updates = 0
 
                 _LOGGER.debug(
-                    "Successfully updated presets data from %s: %d presets, %d playlists",
-                    self.client.host, len(presets_data.presets), len(presets_data.playlists)
+                    "Successfully updated essential presets data from %s: %d presets, %d playlists",
+                    self.client.host, len(essential_presets_data.presets), len(essential_presets_data.playlists)
                 )
 
             except (WLEDTimeoutError, WLEDNetworkError, WLEDPresetError,
                     WLEDConnectionError, WLEDInvalidResponseError) as err:
                 # Handle all known preset-related errors with standardized logic
-                self._handle_preset_error(err, "update presets data")
+                self._handle_preset_error(err, "update essential presets data")
 
             except Exception as err:
                 # Handle unexpected errors
-                self._handle_preset_error(err, "update presets data")
+                self._handle_preset_error(err, "update essential presets data")
 
     def get_presets_data(self) -> Optional[WLEDPresetsData]:
         """Get cached presets data."""

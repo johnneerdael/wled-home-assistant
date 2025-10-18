@@ -257,6 +257,29 @@ class WLEDConnectionStalledError(WLEDTimeoutError):
         )
 
 
+class WLEDConnectionLifecycleError(WLEDConnectionError):
+    """Exception raised when connection lifecycle management detects issues."""
+
+    def __init__(self, message: str, host: Optional[str] = None, lifecycle_stage: Optional[str] = None,
+                 connection_state: Optional[str] = None, original_error: Optional[Exception] = None,
+                 http_status: Optional[int] = None, connection_closed: Optional[bool] = None):
+        super().__init__(message, host, f"lifecycle_{lifecycle_stage}" if lifecycle_stage else "lifecycle_error", original_error)
+        self.lifecycle_stage = lifecycle_stage
+        self.connection_state = connection_state
+        self.http_status = http_status
+        self.connection_closed = connection_closed
+        self.troubleshooting_hint = (
+            "Connection Lifecycle Error Troubleshooting:\n"
+            "1. Connection may be closing prematurely during response processing\n"
+            "2. WLED device may be experiencing high load or resource constraints\n"
+            "3. Network connectivity issues may be interrupting response handling\n"
+            "4. Try reducing request frequency or complexity\n"
+            "5. Restart the WLED device if issues persist\n"
+            "6. Check for network stability and packet loss\n"
+            "7. Verify the WLED device has sufficient memory and processing resources"
+        )
+
+
 # Connection Performance Diagnostics
 
 class WLEDConnectionDiagnostics:
