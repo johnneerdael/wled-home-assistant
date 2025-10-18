@@ -191,3 +191,148 @@ def test_get_schema_for_step_reconfigure():
     assert schema[CONF_HOST].description == "The IP address or hostname of your WLED device"
 
 
+def test_validate_host_private_ip():
+    """Test validation of private IP addresses."""
+    flow = MockWLEDConfigFlow()
+    is_valid, message = flow._validate_host("192.168.1.100")
+    assert is_valid is True
+    assert "Private IP address" in message
+
+
+def test_validate_host_localhost():
+    """Test validation of localhost."""
+    flow = MockWLEDConfigFlow()
+    is_valid, message = flow._validate_host("127.0.0.1")
+    assert is_valid is True
+    assert "Localhost address" in message
+
+
+def test_validate_host_link_local():
+    """Test validation of link-local addresses."""
+    flow = MockWLEDConfigFlow()
+    is_valid, message = flow._validate_host("169.254.1.1")
+    assert is_valid is True
+    assert "Link-local address" in message
+
+
+def test_validate_host_public_ip():
+    """Test validation of public IP addresses."""
+    flow = MockWLEDConfigFlow()
+    is_valid, message = flow._validate_host("8.8.8.8")
+    assert is_valid is False
+    assert "Public IP addresses not recommended" in message
+
+
+def test_validate_host_valid_hostname():
+    """Test validation of valid hostnames."""
+    flow = MockWLEDConfigFlow()
+    is_valid, message = flow._validate_host("wled.local")
+    assert is_valid is True
+    assert "Valid hostname" in message
+
+
+def test_validate_host_protocol_injection():
+    """Test prevention of protocol injection."""
+    flow = MockWLEDConfigFlow()
+    is_valid, message = flow._validate_host("http://192.168.1.100")
+    assert is_valid is False
+    assert "Protocol not allowed" in message
+
+
+def test_validate_host_command_injection():
+    """Test prevention of command injection."""
+    flow = MockWLEDConfigFlow()
+    is_valid, message = flow._validate_host("192.168.1.100; rm -rf /")
+    assert is_valid is False
+    assert "Invalid characters" in message
+
+
+def test_validate_host_path_traversal():
+    """Test prevention of path traversal."""
+    flow = MockWLEDConfigFlow()
+    is_valid, message = flow._validate_host("../etc/passwd")
+    assert is_valid is False
+    assert "Invalid hostname format" in message
+
+
+def test_validate_host_invalid_hostname_format():
+    """Test validation of invalid hostname formats."""
+    flow = MockWLEDConfigFlow()
+
+    # Test consecutive dots
+    is_valid, message = flow._validate_host("wled..local")
+    assert is_valid is False
+    assert "consecutive dots" in message
+
+    # Test starting with dot
+    is_valid, message = flow._validate_host(".wled.local")
+    assert is_valid is False
+    assert "cannot start with dot" in message
+
+    # Test ending with dot
+    is_valid, message = flow._validate_host("wled.local.")
+    assert is_valid is False
+    assert "cannot end with dot" in message
+
+
+def test_validate_host_invalid_characters():
+    """Test validation of hostnames with invalid characters."""
+    flow = MockWLEDConfigFlow()
+    is_valid, message = flow._validate_host("wled@local")
+    assert is_valid is False
+    assert "Invalid hostname format" in message
+
+
+def test_validate_host_too_long():
+    """Test validation of overly long hostnames."""
+    flow = MockWLEDConfigFlow()
+    long_host = "a" * 254
+    is_valid, message = flow._validate_host(long_host)
+    assert is_valid is False
+    assert "Invalid hostname length" in message
+
+
+def test_validate_host_empty():
+    """Test validation of empty hostname."""
+    flow = MockWLEDConfigFlow()
+    is_valid, message = flow._validate_host("")
+    assert is_valid is False
+    assert "Invalid hostname length" in message
+
+
+@pytest.mark.asyncio
+async def test_user_step_protocol_injection_rejected():
+    """Test that protocol injection is rejected in user step."""
+    flow = MockWLEDConfigFlow()
+    result = await flow.async_step_user({CONF_HOST: "http://malicious.com"})
+
+    assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+    assert result["step_id"] == "user"
+    assert result["errors"]["base"] == "invalid_host"
+    assert "Protocol not allowed" in result["description_placeholders"]["error_details"]
+
+
+@pytest.mark.asyncio
+async def test_user_step_command_injection_rejected():
+    """Test that command injection is rejected in user step."""
+    flow = MockWLEDConfigFlow()
+    result = await flow.async_step_user({CONF_HOST: "192.168.1.100; cat /etc/passwd"})
+
+    assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+    assert result["step_id"] == "user"
+    assert result["errors"]["base"] == "invalid_host"
+    assert "Invalid characters" in result["description_placeholders"]["error_details"]
+
+
+@pytest.mark.asyncio
+async def test_user_step_public_ip_rejected():
+    """Test that public IP addresses are rejected."""
+    flow = MockWLEDConfigFlow()
+    result = await flow.async_step_user({CONF_HOST: "8.8.8.8"})
+
+    assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+    assert result["step_id"] == "user"
+    assert result["errors"]["base"] == "invalid_host"
+    assert "Public IP addresses not recommended" in result["description_placeholders"]["error_details"]
+
+

@@ -1,6 +1,8 @@
 """Config flow for WLED JSONAPI integration."""
+import ipaddress
 import logging
-from typing import Any, Dict, Optional
+import re
+from typing import Any, Dict, Optional, Tuple
 
 import voluptuous as vol
 from homeassistant import config_entries
@@ -17,7 +19,6 @@ from .exceptions import (
     WLEDTimeoutError,
     WLEDNetworkError,
     WLEDAuthenticationError,
-    WLEDConfigurationError,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,6 +34,70 @@ class WLEDJSONAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._host: Optional[str] = None
         self._discovery_info: Optional[zeroconf.ZeroconfServiceInfo] = None
 
+    def _validate_host(self, host: str) -> Tuple[bool, str]:
+        """Validate host input to prevent malicious inputs.
+
+        Args:
+            host: The host string to validate
+
+        Returns:
+            Tuple of (is_valid, message_or_warning)
+        """
+        host = host.strip()
+
+        # Check for reasonable length
+        if len(host) > 253 or len(host) < 1:
+            return False, "Invalid hostname length (must be 1-253 characters)"
+
+        # Prevent protocol injection
+        if '://' in host.lower():
+            return False, "Protocol not allowed in hostname. Only enter IP address or hostname."
+
+        # Prevent command injection attempts
+        if any(char in host for char in [';', '&', '|', '`', '$', '(', ')', '{', '}', '[', ']', '<', '>', '"', "'"]):
+            return False, "Invalid characters detected in hostname"
+
+        # Prevent path traversal attempts
+        if '../' in host or '..\\' in host:
+            return False, "Invalid hostname format"
+
+        # Validate IP address format
+        try:
+            ip = ipaddress.ip_address(host)
+            if ip.is_private:
+                return True, "Private IP address"
+            elif ip.is_loopback:
+                return True, "Localhost address"
+            elif ip.is_link_local:
+                return True, "Link-local address"
+            else:
+                # Public IP addresses are not recommended for IoT devices
+                return False, "Public IP addresses not recommended for IoT devices for security reasons"
+        except ValueError:
+            pass
+
+        # Validate hostname format according to RFC 952 and RFC 1123
+        # Hostnames can contain letters, digits, and hyphens
+        # Cannot start or end with hyphen or dot
+        # Cannot contain consecutive dots
+        if re.match(r'^[a-zA-Z0-9.-]+$', host):
+            # Check for invalid hostname patterns
+            if '..' in host:
+                return False, "Invalid hostname format (consecutive dots not allowed)"
+            if host.startswith(('.', '-')):
+                return False, "Invalid hostname format (cannot start with dot or hyphen)"
+            if host.endswith(('.', '-')):
+                return False, "Invalid hostname format (cannot end with dot or hyphen)"
+
+            # Check if any label is too long (max 63 characters per label)
+            labels = host.split('.')
+            if any(len(label) > 63 for label in labels):
+                return False, "Invalid hostname format (label too long)"
+
+            return True, "Valid hostname"
+
+        return False, "Invalid hostname format. Use valid IP address (e.g., 192.168.1.100) or hostname (e.g., wled.local)"
+
     async def async_step_user(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
@@ -42,15 +107,23 @@ class WLEDJSONAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             host = user_input[CONF_HOST].strip()
 
-            # Validate host input
-            if not host:
+            # Enhanced host validation
+            is_valid, validation_message = self._validate_host(host)
+
+            if not is_valid:
                 errors["base"] = "invalid_host"
                 return self.async_show_form(
                     step_id="user",
                     data_schema=vol.Schema({vol.Required(CONF_HOST): str}),
                     errors=errors,
-                    description_placeholders={"error_details": "Please enter a valid IP address or hostname"}
+                    description_placeholders={"error_details": validation_message}
                 )
+
+            # Log security warnings for valid inputs that may have security implications
+            if "Public IP addresses not recommended" in validation_message:
+                _LOGGER.warning("User entered public IP address for WLED device: %s", host)
+
+            _LOGGER.debug("Validated host input: %s - %s", host, validation_message)
 
             _LOGGER.debug("Testing connection to WLED device at %s", host)
 
@@ -220,14 +293,23 @@ class WLEDJSONAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             host = user_input[CONF_HOST].strip()
 
-            # Validate host input
-            if not host:
+            # Enhanced host validation
+            is_valid, validation_message = self._validate_host(host)
+
+            if not is_valid:
                 errors["base"] = "invalid_host"
                 return self.async_show_form(
                     step_id="reconfigure",
                     data_schema=vol.Schema({vol.Required(CONF_HOST): str}),
                     errors=errors,
+                    description_placeholders={"error_details": validation_message}
                 )
+
+            # Log security warnings for valid inputs that may have security implications
+            if "Public IP addresses not recommended" in validation_message:
+                _LOGGER.warning("User entered public IP address for WLED reconfiguration: %s", host)
+
+            _LOGGER.debug("Validated reconfiguration host input: %s - %s", host, validation_message)
 
             _LOGGER.debug("Testing reconfiguration connection to WLED device at %s", host)
 
