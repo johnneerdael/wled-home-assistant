@@ -3,7 +3,7 @@ import asyncio
 import logging
 from datetime import timedelta
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryNotReady
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
@@ -11,10 +11,16 @@ from homeassistant.helpers.typing import ConfigType
 from .const import DOMAIN, CONF_HOST
 from .coordinator import WLEDJSONAPIDataCoordinator
 from .api import WLEDJSONAPIClient
+from .exceptions import (
+    WLEDConnectionError,
+    WLEDTimeoutError,
+    WLEDNetworkError,
+    WLEDAuthenticationError,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.LIGHT]
+PLATFORMS: list[Platform] = [Platform.LIGHT, Platform.SELECT]
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -24,34 +30,67 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up WLED JSONAPI from a config entry."""
+    """Set up WLED JSONAPI from a config entry with enhanced error handling."""
     _LOGGER.debug("Setting up WLED JSONAPI integration for entry: %s", entry.title)
 
     host = entry.data[CONF_HOST]
-    
-    # Create API client
-    client = WLEDJSONAPIClient(host)
-    
-    # Create coordinator
-    coordinator = WLEDJSONAPIDataCoordinator(hass, client)
-    
-    # Store coordinator and client in hass.data
-    hass.data[DOMAIN][entry.entry_id] = {
-        "coordinator": coordinator,
-        "client": client,
-        "entry": entry,
-    }
 
-    # Perform initial data refresh
-    await coordinator.async_config_entry_first_refresh()
+    try:
+        # Create API client
+        client = WLEDJSONAPIClient(host)
 
-    # Set up platforms
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        # Test connection before setting up coordinator
+        if not await client.test_connection():
+            _LOGGER.error("Failed to connect to WLED device at %s during setup", host)
+            raise ConfigEntryNotReady(f"Could not connect to WLED device at {host}")
 
-    # Reload entry when it's updated
-    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+        # Create coordinator
+        coordinator = WLEDJSONAPIDataCoordinator(hass, client)
 
-    return True
+        # Store coordinator and client in hass.data
+        hass.data[DOMAIN][entry.entry_id] = {
+            "coordinator": coordinator,
+            "client": client,
+            "entry": entry,
+        }
+
+        # Perform initial data refresh with error handling
+        try:
+            await coordinator.async_config_entry_first_refresh()
+        except Exception as err:
+            _LOGGER.error("Initial data refresh failed for WLED device at %s: %s", host, err)
+            # Don't fail setup completely, but log the error
+            # The coordinator will handle retry logic
+
+        # Set up platforms
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+        # Reload entry when it's updated
+        entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+
+        _LOGGER.info("Successfully set up WLED JSONAPI integration for device at %s", host)
+        return True
+
+    except WLEDTimeoutError as err:
+        _LOGGER.error("Timeout during setup of WLED device at %s: %s", host, err)
+        raise ConfigEntryNotReady(f"WLED device at {host} timed out during setup. Please ensure the device is responsive.")
+
+    except WLEDNetworkError as err:
+        _LOGGER.error("Network error during setup of WLED device at %s: %s", host, err)
+        raise ConfigEntryNotReady(f"Cannot connect to WLED device at {host}. Please check network connectivity.")
+
+    except WLEDAuthenticationError as err:
+        _LOGGER.error("Authentication error during setup of WLED device at %s: %s", host, err)
+        # This should be a permanent failure, not retry
+        return False
+
+    except WLEDConnectionError as err:
+        _LOGGER.error("Connection error during setup of WLED device at %s: %s", host, err)
+        raise ConfigEntryNotReady(f"Connection error with WLED device at {host}. Device may be busy or restarting.")
+
+    except Exception as err:
+        _LOGGER.exception("Unexpected error during setup of WLED device at %s: %s", host, err)
+        raise ConfigEntryNotReady(f"Unexpected error setting up WLED device at {host}: {err}")
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

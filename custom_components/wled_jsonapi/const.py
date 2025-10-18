@@ -11,20 +11,15 @@ API_STATE = "/json/state"
 API_INFO = "/json/info"
 API_EFFECTS = "/json/eff"
 API_PALETTES = "/json/pal"
+API_PRESETS = "/presets.json"
 API_BASE = "/json"
 
-# Retry configuration
-MAX_RETRIES = 5
-INITIAL_RETRY_DELAY = 1.0  # seconds
-MAX_RETRY_DELAY = 30.0  # seconds
-RETRY_BACKOFF_MULTIPLIER = 2.0
-
 # Timeouts
-REQUEST_TIMEOUT = 10.0  # seconds
-CONNECTION_TIMEOUT = 5.0  # seconds
+TIMEOUT = 10.0  # seconds
 
 # Polling
 UPDATE_INTERVAL = timedelta(minutes=1)
+PRESETS_UPDATE_INTERVAL = timedelta(hours=1)
 
 # Device availability
 MAX_FAILED_POLLS = 3
