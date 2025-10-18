@@ -1,0 +1,11 @@
+## 1. Implementation
+- [ ] 1.1 Create basic integration structure and manifest
+- [ ] 1.2 Implement WLED JSONAPI client with retry logic
+- [ ] 1.3 Implement device discovery via mDNS/zeroconf
+- [ ] 1.4 Implement manual device addition via config flow
+- [ ] 1.5 Implement light entity with on/off and brightness control
+- [ ] 1.6 Implement preset and playlist selector controls
+- [ ] 1.7 Implement device status monitoring (1-minute polling)
+- [ ] 1.8 Add error handling and connection recovery
+- [ ] 1.9 Create HACS repository structure and documentation
+- [ ] 1.10 Test integration functionality
