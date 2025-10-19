@@ -256,30 +256,62 @@ class WLEDJSONAPIDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             raise UpdateFailed(error_msg) from err
 
     async def async_send_command(self, command: Dict[str, Any]) -> Dict[str, Any]:
-        """Send a command to the WLED device with simplified error handling."""
+        """Send a command to the WLED device with comprehensive logging."""
         if not isinstance(command, dict) or not command:
             error_msg = "Invalid command provided: command must be a non-empty dictionary"
-            _LOGGER.error(error_msg)
+            _LOGGER.error("WLED Command Validation Failed: %s | Device: %s", error_msg, self.client.host)
             raise WLEDCommandError(error_msg, command=command, host=self.client.host)
 
+        # Log command details at INFO level for visibility
+        _LOGGER.info(
+            "WLED Command: Sending to %s | Command: %s | Device Available: %s",
+            self.client.host, command, self.available
+        )
+
+        # Log additional debug details
+        _LOGGER.debug(
+            "WLED Command Details: Device=%s, Command=%s, Failed Polls=%d, Connection State=%s",
+            self.client.host, command, self._failed_polls, self._connection_state
+        )
+
         try:
-            _LOGGER.debug("Sending command to WLED device at %s: %s", self.client.host, command)
             response = await self.client.update_state(command)
 
+            # Log successful command execution
+            _LOGGER.info(
+                "WLED Command Success: %s | Command: %s | Response Received",
+                self.client.host, command
+            )
+
+            # Log response details for debugging
+            _LOGGER.debug(
+                "WLED Command Response: Device=%s, Command=%s, Response Keys=%s",
+                self.client.host, command, list(response.keys()) if isinstance(response, dict) else "N/A"
+            )
+
             # Trigger an update after successful command
+            _LOGGER.debug("WLED Command: Triggering data refresh after successful command to %s", self.client.host)
             await self.async_request_refresh()
 
-            _LOGGER.debug("Successfully sent command to WLED device at %s", self.client.host)
+            _LOGGER.info("WLED Command Completed: %s | Command: %s", self.client.host, command)
             return response
 
         except (WLEDTimeoutError, WLEDNetworkError, WLEDAuthenticationError,
                 WLEDConnectionError, WLEDInvalidResponseError, WLEDCommandError) as err:
-            # Handle error with simplified approach
+            # Handle error with comprehensive logging
+            _LOGGER.error(
+                "WLED Command Failed: %s | Command: %s | Error Type: %s | Error: %s",
+                self.client.host, command, type(err).__name__, str(err)
+            )
             self._handle_error(err)
             raise
 
         except Exception as err:
-            # Handle unexpected errors
+            # Handle unexpected errors with detailed logging
+            _LOGGER.error(
+                "WLED Command Unexpected Error: %s | Command: %s | Error Type: %s | Error: %s",
+                self.client.host, command, type(err).__name__, str(err)
+            )
             self._handle_error(err)
             raise WLEDCommandError(
                 f"Unexpected error sending command to WLED device at {self.client.host}: {err}",
@@ -292,9 +324,9 @@ class WLEDJSONAPIDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         transition: int | None = None,
         preset: int | None = None,
     ) -> Dict[str, Any]:
-        """Turn on the WLED JSONAPI device."""
+        """Turn on the WLED JSONAPI device with comprehensive logging."""
         command = {"on": True}
-        
+
         if brightness is not None:
             command["bri"] = brightness
         if transition is not None:
@@ -302,29 +334,54 @@ class WLEDJSONAPIDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         if preset is not None:
             command["ps"] = preset
 
+        # Log turn_on command details
+        _LOGGER.info(
+            "WLED Turn On: %s | Brightness: %s | Transition: %s | Preset: %s",
+            self.client.host, brightness, transition, preset
+        )
+
         return await self.async_send_command(command)
 
     async def async_turn_off(self, transition: int | None = None) -> Dict[str, Any]:
-        """Turn off the WLED JSONAPI device."""
+        """Turn off the WLED JSONAPI device with comprehensive logging."""
         command = {"on": False}
-        
+
         if transition is not None:
             command["transition"] = transition
+
+        # Log turn_off command details
+        _LOGGER.info(
+            "WLED Turn Off: %s | Transition: %s",
+            self.client.host, transition
+        )
 
         return await self.async_send_command(command)
 
     async def async_set_brightness(self, brightness: int, transition: int | None = None) -> Dict[str, Any]:
-        """Set the brightness of the WLED JSONAPI device."""
+        """Set the brightness of the WLED JSONAPI device with comprehensive logging."""
         command = {"bri": brightness}
-        
+
         if transition is not None:
             command["transition"] = transition
+
+        # Log brightness command details
+        _LOGGER.info(
+            "WLED Set Brightness: %s | Brightness: %s | Transition: %s",
+            self.client.host, brightness, transition
+        )
 
         return await self.async_send_command(command)
 
     async def async_set_preset(self, preset: int) -> Dict[str, Any]:
-        """Set a preset on the WLED device."""
+        """Set a preset on the WLED device with comprehensive logging."""
         command = {"ps": preset}
+
+        # Log preset command details
+        _LOGGER.info(
+            "WLED Set Preset: %s | Preset: %s",
+            self.client.host, preset
+        )
+
         return await self.async_send_command(command)
 
     async def async_set_effect(
@@ -334,15 +391,21 @@ class WLEDJSONAPIDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         intensity: int | None = None,
         palette: int | None = None,
     ) -> Dict[str, Any]:
-        """Set an effect on the WLED JSONAPI device."""
+        """Set an effect on the WLED JSONAPI device with comprehensive logging."""
         command = {"seg": [{"fx": effect}]}
-        
+
         if speed is not None:
             command["seg"][0]["sx"] = speed
         if intensity is not None:
             command["seg"][0]["ix"] = intensity
         if palette is not None:
             command["seg"][0]["pal"] = palette
+
+        # Log effect command details
+        _LOGGER.info(
+            "WLED Set Effect: %s | Effect: %s | Speed: %s | Intensity: %s | Palette: %s",
+            self.client.host, effect, speed, intensity, palette
+        )
 
         return await self.async_send_command(command)
 

@@ -107,12 +107,19 @@ class WLEDJSONAPILight(CoordinatorEntity, LightEntity):
         return LightEntityFeature.EFFECT
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn on the light with enhanced error handling."""
+        """Turn on the light with comprehensive logging and error handling."""
+        host = self._entry.data['host']
+
+        # Log turn_on attempt at INFO level
+        _LOGGER.info(
+            "WLED Light Turn On: %s | Available: %s | Current State: %s",
+            host, self.coordinator.available, self.is_on
+        )
+
         if not self.coordinator.available:
             _LOGGER.warning(
-                "Cannot turn on WLED light at %s - device is not available. Last error: %s",
-                self._entry.data['host'],
-                self.coordinator.last_error or "Unknown"
+                "WLED Light Turn On Failed: %s | Device unavailable | Last Error: %s",
+                host, self.coordinator.last_error or "Unknown"
             )
             return
 
@@ -121,241 +128,291 @@ class WLEDJSONAPILight(CoordinatorEntity, LightEntity):
         effect = kwargs.get(ATTR_EFFECT)
         preset = None
 
-        # Handle effect selection
+        # Log input parameters
+        _LOGGER.debug(
+            "WLED Light Turn On Params: %s | Brightness: %s, Transition: %s, Effect: %s",
+            host, brightness, transition, effect
+        )
+
+        # Handle effect selection with detailed logging
         if effect is not None:
             effects = self.coordinator.data.get("effects", [])
+            _LOGGER.debug(
+                "WLED Light Effect Lookup: %s | Requested: '%s' | Available: %s",
+                host, effect, effects
+            )
+
             if effect in effects:
                 preset = effects.index(effect)
-                _LOGGER.debug("Effect '%s' found, using preset ID %s", effect, preset)
+                _LOGGER.info(
+                    "WLED Light Effect Found: %s | Effect: '%s' -> Preset ID: %s",
+                    host, effect, preset
+                )
             else:
                 _LOGGER.warning(
-                    "Effect '%s' not found in available effects from WLED device at %s. "
-                    "Available effects: %s",
-                    effect, self._entry.data['host'], effects
+                    "WLED Light Effect Not Found: %s | Effect: '%s' | Available: %s",
+                    host, effect, effects
                 )
 
+        # Log the final command that will be sent
+        _LOGGER.info(
+            "WLED Light Turn On Command: %s | Brightness: %s | Transition: %s | Preset: %s",
+            host, brightness, transition, preset
+        )
+
         try:
-            _LOGGER.debug(
-                "Turning on WLED light at %s with brightness=%s, transition=%s, preset=%s",
-                self._entry.data['host'], brightness, transition, preset
-            )
             await self.coordinator.async_turn_on(
                 brightness=brightness,
                 transition=transition,
                 preset=preset,
             )
-            _LOGGER.debug("Successfully turned on WLED light at %s", self._entry.data['host'])
+            _LOGGER.info("WLED Light Turn On Success: %s", host)
 
         except WLEDTimeoutError as err:
             _LOGGER.error(
-                "Timeout while turning on WLED light at %s. The device may be busy or unresponsive. "
-                "Please check the device and try again. Error: %s",
-                self._entry.data['host'], err
+                "WLED Light Turn On Timeout: %s | Device may be busy or unresponsive | Error: %s",
+                host, err
             )
 
         except WLEDNetworkError as err:
             _LOGGER.error(
-                "Network error while turning on WLED light at %s. Please check that the device is "
-                "connected to your network and the IP address is correct. Error: %s",
-                self._entry.data['host'], err
+                "WLED Light Turn On Network Error: %s | Check network connectivity and IP address | Error: %s",
+                host, err
             )
 
         except WLEDCommandError as err:
             _LOGGER.error(
-                "Command error while turning on WLED light at %s. The device may not support this "
-                "command or there may be an issue with the request. Error: %s",
-                self._entry.data['host'], err
+                "WLED Light Turn On Command Error: %s | Device may not support this command | Error: %s",
+                host, err
             )
 
         except WLEDConnectionError as err:
             _LOGGER.error(
-                "Connection error while turning on WLED light at %s. Please check the device status "
-                "and network connectivity. Error: %s",
-                self._entry.data['host'], err
+                "WLED Light Turn On Connection Error: %s | Check device status and network | Error: %s",
+                host, err
             )
 
         except Exception as err:
             _LOGGER.exception(
-                "Unexpected error while turning on WLED light at %s: %s",
-                self._entry.data['host'], err
+                "WLED Light Turn On Unexpected Error: %s | Error: %s",
+                host, err
             )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn off the light with enhanced error handling."""
+        """Turn off the light with comprehensive logging and error handling."""
+        host = self._entry.data['host']
+
+        # Log turn_off attempt at INFO level
+        _LOGGER.info(
+            "WLED Light Turn Off: %s | Available: %s | Current State: %s",
+            host, self.coordinator.available, self.is_on
+        )
+
         if not self.coordinator.available:
             _LOGGER.warning(
-                "Cannot turn off WLED light at %s - device is not available. Last error: %s",
-                self._entry.data['host'],
-                self.coordinator.last_error or "Unknown"
+                "WLED Light Turn Off Failed: %s | Device unavailable | Last Error: %s",
+                host, self.coordinator.last_error or "Unknown"
             )
             return
 
         transition = kwargs.get(ATTR_TRANSITION)
 
+        # Log input parameters
+        _LOGGER.debug(
+            "WLED Light Turn Off Params: %s | Transition: %s",
+            host, transition
+        )
+
+        # Log the final command that will be sent
+        _LOGGER.info(
+            "WLED Light Turn Off Command: %s | Transition: %s",
+            host, transition
+        )
+
         try:
-            _LOGGER.debug(
-                "Turning off WLED light at %s with transition=%s",
-                self._entry.data['host'], transition
-            )
             await self.coordinator.async_turn_off(transition=transition)
-            _LOGGER.debug("Successfully turned off WLED light at %s", self._entry.data['host'])
+            _LOGGER.info("WLED Light Turn Off Success: %s", host)
 
         except WLEDTimeoutError as err:
             _LOGGER.error(
-                "Timeout while turning off WLED light at %s. The device may be busy or unresponsive. "
-                "Please check the device and try again. Error: %s",
-                self._entry.data['host'], err
+                "WLED Light Turn Off Timeout: %s | Device may be busy or unresponsive | Error: %s",
+                host, err
             )
 
         except WLEDNetworkError as err:
             _LOGGER.error(
-                "Network error while turning off WLED light at %s. Please check that the device is "
-                "connected to your network and the IP address is correct. Error: %s",
-                self._entry.data['host'], err
+                "WLED Light Turn Off Network Error: %s | Check network connectivity and IP address | Error: %s",
+                host, err
             )
 
         except WLEDCommandError as err:
             _LOGGER.error(
-                "Command error while turning off WLED light at %s. The device may not support this "
-                "command or there may be an issue with the request. Error: %s",
-                self._entry.data['host'], err
+                "WLED Light Turn Off Command Error: %s | Device may not support this command | Error: %s",
+                host, err
             )
 
         except WLEDConnectionError as err:
             _LOGGER.error(
-                "Connection error while turning off WLED light at %s. Please check the device status "
-                "and network connectivity. Error: %s",
-                self._entry.data['host'], err
+                "WLED Light Turn Off Connection Error: %s | Check device status and network | Error: %s",
+                host, err
             )
 
         except Exception as err:
             _LOGGER.exception(
-                "Unexpected error while turning off WLED light at %s: %s",
-                self._entry.data['host'], err
+                "WLED Light Turn Off Unexpected Error: %s | Error: %s",
+                host, err
             )
 
     async def async_set_brightness(self, brightness: int, **kwargs: Any) -> None:
-        """Set the brightness of the light with enhanced error handling."""
+        """Set the brightness of the light with comprehensive logging and error handling."""
+        host = self._entry.data['host']
+
+        # Log brightness change attempt at INFO level
+        _LOGGER.info(
+            "WLED Light Set Brightness: %s | Available: %s | Current Brightness: %s -> %s",
+            host, self.coordinator.available, self.brightness, brightness
+        )
+
         if not self.coordinator.available:
             _LOGGER.warning(
-                "Cannot set brightness for WLED light at %s - device is not available. Last error: %s",
-                self._entry.data['host'],
-                self.coordinator.last_error or "Unknown"
+                "WLED Light Set Brightness Failed: %s | Device unavailable | Last Error: %s",
+                host, self.coordinator.last_error or "Unknown"
             )
             return
 
         if not isinstance(brightness, int) or not (0 <= brightness <= 255):
             _LOGGER.error(
-                "Invalid brightness value %s for WLED light at %s. Must be an integer between 0 and 255.",
-                brightness, self._entry.data['host']
+                "WLED Light Set Brightness Invalid: %s | Brightness: %s | Must be integer 0-255",
+                host, brightness
             )
             return
 
         transition = kwargs.get(ATTR_TRANSITION)
 
+        # Log input parameters
+        _LOGGER.debug(
+            "WLED Light Set Brightness Params: %s | Brightness: %s, Transition: %s",
+            host, brightness, transition
+        )
+
+        # Log the final command that will be sent
+        _LOGGER.info(
+            "WLED Light Set Brightness Command: %s | Brightness: %s | Transition: %s",
+            host, brightness, transition
+        )
+
         try:
-            _LOGGER.debug(
-                "Setting brightness of WLED light at %s to %s with transition=%s",
-                self._entry.data['host'], brightness, transition
-            )
             await self.coordinator.async_set_brightness(brightness, transition=transition)
-            _LOGGER.debug("Successfully set brightness of WLED light at %s", self._entry.data['host'])
+            _LOGGER.info("WLED Light Set Brightness Success: %s | Brightness: %s", host, brightness)
 
         except WLEDTimeoutError as err:
             _LOGGER.error(
-                "Timeout while setting brightness of WLED light at %s. The device may be busy or unresponsive. "
-                "Please check the device and try again. Error: %s",
-                self._entry.data['host'], err
+                "WLED Light Set Brightness Timeout: %s | Device may be busy or unresponsive | Error: %s",
+                host, err
             )
 
         except WLEDNetworkError as err:
             _LOGGER.error(
-                "Network error while setting brightness of WLED light at %s. Please check that the device is "
-                "connected to your network and the IP address is correct. Error: %s",
-                self._entry.data['host'], err
+                "WLED Light Set Brightness Network Error: %s | Check network connectivity and IP address | Error: %s",
+                host, err
             )
 
         except WLEDCommandError as err:
             _LOGGER.error(
-                "Command error while setting brightness of WLED light at %s. The device may not support this "
-                "command or there may be an issue with the request. Error: %s",
-                self._entry.data['host'], err
+                "WLED Light Set Brightness Command Error: %s | Device may not support this command | Error: %s",
+                host, err
             )
 
         except WLEDConnectionError as err:
             _LOGGER.error(
-                "Connection error while setting brightness of WLED light at %s. Please check the device status "
-                "and network connectivity. Error: %s",
-                self._entry.data['host'], err
+                "WLED Light Set Brightness Connection Error: %s | Check device status and network | Error: %s",
+                host, err
             )
 
         except Exception as err:
             _LOGGER.exception(
-                "Unexpected error while setting brightness of WLED light at %s: %s",
-                self._entry.data['host'], err
+                "WLED Light Set Brightness Unexpected Error: %s | Error: %s",
+                host, err
             )
 
     async def async_set_effect(self, effect: str, **kwargs: Any) -> None:
-        """Set the effect of the light with enhanced error handling."""
+        """Set the effect of the light with comprehensive logging and error handling."""
+        host = self._entry.data['host']
+
+        # Log effect change attempt at INFO level
+        _LOGGER.info(
+            "WLED Light Set Effect: %s | Available: %s | Current Effect: %s -> %s",
+            host, self.coordinator.available, self.effect, effect
+        )
+
         if not self.coordinator.available:
             _LOGGER.warning(
-                "Cannot set effect for WLED light at %s - device is not available. Last error: %s",
-                self._entry.data['host'],
-                self.coordinator.last_error or "Unknown"
+                "WLED Light Set Effect Failed: %s | Device unavailable | Last Error: %s",
+                host, self.coordinator.last_error or "Unknown"
             )
             return
 
         if not isinstance(effect, str) or not effect.strip():
             _LOGGER.error(
-                "Invalid effect value '%s' for WLED light at %s. Must be a non-empty string.",
-                effect, self._entry.data['host']
+                "WLED Light Set Effect Invalid: %s | Effect: '%s' | Must be non-empty string",
+                host, effect
             )
             return
 
         effects = self.coordinator.data.get("effects", [])
+
+        # Log effect lookup details
+        _LOGGER.debug(
+            "WLED Light Effect Lookup: %s | Requested: '%s' | Available: %s",
+            host, effect, effects
+        )
+
         if effect in effects:
             effect_id = effects.index(effect)
+            _LOGGER.info(
+                "WLED Light Effect Found: %s | Effect: '%s' -> ID: %s",
+                host, effect, effect_id
+            )
+
+            # Log the final command that will be sent
+            _LOGGER.info(
+                "WLED Light Set Effect Command: %s | Effect: '%s' (ID: %s)",
+                host, effect, effect_id
+            )
+
             try:
-                _LOGGER.debug(
-                    "Setting effect of WLED light at %s to '%s' (ID: %s)",
-                    self._entry.data['host'], effect, effect_id
-                )
                 await self.coordinator.async_set_effect(effect_id)
-                _LOGGER.debug("Successfully set effect of WLED light at %s", self._entry.data['host'])
+                _LOGGER.info("WLED Light Set Effect Success: %s | Effect: '%s'", host, effect)
+
             except WLEDTimeoutError as err:
                 _LOGGER.error(
-                    "Timeout while setting effect of WLED light at %s. The device may be busy or unresponsive. "
-                    "Please check the device and try again. Error: %s",
-                    self._entry.data['host'], err
+                    "WLED Light Set Effect Timeout: %s | Device may be busy or unresponsive | Error: %s",
+                    host, err
                 )
             except WLEDNetworkError as err:
                 _LOGGER.error(
-                    "Network error while setting effect of WLED light at %s. Please check that the device is "
-                    "connected to your network and the IP address is correct. Error: %s",
-                    self._entry.data['host'], err
+                    "WLED Light Set Effect Network Error: %s | Check network connectivity and IP address | Error: %s",
+                    host, err
                 )
             except WLEDCommandError as err:
                 _LOGGER.error(
-                    "Command error while setting effect of WLED light at %s. The device may not support this "
-                    "command or there may be an issue with the request. Error: %s",
-                    self._entry.data['host'], err
+                    "WLED Light Set Effect Command Error: %s | Device may not support this command | Error: %s",
+                    host, err
                 )
             except WLEDConnectionError as err:
                 _LOGGER.error(
-                    "Connection error while setting effect of WLED light at %s. Please check the device status "
-                    "and network connectivity. Error: %s",
-                    self._entry.data['host'], err
+                    "WLED Light Set Effect Connection Error: %s | Check device status and network | Error: %s",
+                    host, err
                 )
             except Exception as err:
                 _LOGGER.exception(
-                    "Unexpected error while setting effect of WLED light at %s: %s",
-                    self._entry.data['host'], err
+                    "WLED Light Set Effect Unexpected Error: %s | Error: %s",
+                    host, err
                 )
         else:
             _LOGGER.warning(
-                "Effect '%s' not found in available effects from WLED device at %s. "
-                "Available effects: %s",
-                effect, self._entry.data['host'], effects
+                "WLED Light Effect Not Found: %s | Effect: '%s' | Available: %s",
+                host, effect, effects
             )
 
 

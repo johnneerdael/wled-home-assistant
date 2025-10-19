@@ -795,3 +795,188 @@ async def test_simple_client_session_creation():
             headers={"User-Agent": "Home-Assistant-WLED-JSONAPI/1.0"},
             auto_decompress=False,
         )
+
+
+# Response Validation Tests
+
+@pytest.mark.asyncio
+async def test_successful_state_command_validation(wled_client, mock_session):
+    """Test successful state command validation."""
+    # Mock response with matching state
+    mock_response = AsyncMock()
+    mock_response.json.return_value = {"on": True, "bri": 128, "ps": 5}
+    mock_session.post.return_value.__aenter__.return_value = mock_response
+
+    # Test
+    result = await wled_client.update_state({"on": True, "bri": 128, "ps": 5})
+
+    # Assertions
+    assert result == {"on": True, "bri": 128, "ps": 5}
+    mock_session.post.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_state_command_validation_critical_mismatch(wled_client, mock_session):
+    """Test state command validation with critical mismatch."""
+    # Mock response where device didn't apply the on=True command
+    mock_response = AsyncMock()
+    mock_response.json.return_value = {"on": False, "bri": 128}  # Device didn't turn on
+    mock_session.post.return_value.__aenter__.return_value = mock_response
+
+    # Test and assert exception
+    with pytest.raises(WLEDCommandError) as exc_info:
+        await wled_client.update_state({"on": True, "bri": 128})
+
+    assert "did not apply critical state changes" in str(exc_info.value)
+    assert "on: expected True, got False" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_state_command_validation_non_critical_mismatch(wled_client, mock_session):
+    """Test state command validation with non-critical mismatch."""
+    # Mock response where device applied critical changes but not non-critical
+    mock_response = AsyncMock()
+    mock_response.json.return_value = {"on": True, "bri": 127}  # Brightness slightly different
+    mock_session.post.return_value.__aenter__.return_value = mock_response
+
+    # Test - should succeed despite minor difference
+    result = await wled_client.update_state({"on": True, "bri": 128})
+
+    # Assertions
+    assert result == {"on": True, "bri": 127}
+    mock_session.post.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_wled_error_response_detection(wled_client, mock_session):
+    """Test detection of WLED error responses."""
+    # Mock response with WLED error (HTTP 200 but contains error)
+    mock_response = AsyncMock()
+    mock_response.json.return_value = {
+        "error": {
+            "message": "Invalid segment ID",
+            "code": 400
+        }
+    }
+    mock_session.post.return_value.__aenter__.return_value = mock_response
+
+    # Test and assert exception
+    with pytest.raises(WLEDCommandError) as exc_info:
+        await wled_client.update_state({"seg": [{"fx": 999}]})
+
+    assert "WLED device error: Invalid segment ID" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_wled_success_false_response(wled_client, mock_session):
+    """Test detection of WLED success=false responses."""
+    # Mock response where WLED explicitly reports failure
+    mock_response = AsyncMock()
+    mock_response.json.return_value = {
+        "success": False,
+        "error": "Effect not available"
+    }
+    mock_session.post.return_value.__aenter__.return_value = mock_response
+
+    # Test and assert exception
+    with pytest.raises(WLEDCommandError) as exc_info:
+        await wled_client.update_state({"seg": [{"fx": 999}]})
+
+    assert "WLED command failed: Effect not available" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_state_command_missing_response_fields(wled_client, mock_session):
+    """Test validation when response is missing expected fields."""
+    # Mock response missing critical fields
+    mock_response = AsyncMock()
+    mock_response.json.return_value = {"bri": 128}  # Missing "on" field
+    mock_session.post.return_value.__aenter__.return_value = mock_response
+
+    # Test and assert exception
+    with pytest.raises(WLEDCommandError) as exc_info:
+        await wled_client.update_state({"on": True, "bri": 128})
+
+    assert "did not apply critical state changes" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_segment_command_validation(wled_client, mock_session):
+    """Test segment command validation."""
+    # Mock response with segment data
+    mock_response = AsyncMock()
+    mock_response.json.return_value = {
+        "on": True,
+        "seg": [{"fx": 10, "sx": 128, "ix": 64}]  # Segment with effect, speed, intensity
+    }
+    mock_session.post.return_value.__aenter__.return_value = mock_response
+
+    # Test
+    result = await wled_client.update_state({"seg": [{"fx": 10, "sx": 128}]})
+
+    # Assertions
+    assert result == {"on": True, "seg": [{"fx": 10, "sx": 128, "ix": 64}]}
+    mock_session.post.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_playlist_activation_validation_success(wled_client, mock_session):
+    """Test successful playlist activation validation."""
+    # Mock response with playlist applied
+    mock_response = AsyncMock()
+    mock_response.json.return_value = {"on": True, "pl": 3}
+    mock_session.post.return_value.__aenter__.return_value = mock_response
+
+    # Test
+    result = await wled_client.activate_playlist(3)
+
+    # Assertions
+    assert result == {"on": True, "pl": 3}
+    mock_session.post.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_playlist_activation_validation_failure(wled_client, mock_session):
+    """Test playlist activation validation failure."""
+    # Mock response where playlist wasn't applied
+    mock_response = AsyncMock()
+    mock_response.json.return_value = {"on": True, "pl": 0}  # Playlist not applied
+    mock_session.post.return_value.__aenter__.return_value = mock_response
+
+    # Test and assert exception
+    with pytest.raises(WLEDCommandError) as exc_info:
+        await wled_client.activate_playlist(3)
+
+    assert "did not apply critical state changes" in str(exc_info.value)
+    assert "pl: expected 3, got 0" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_info_response_structure_validation(wled_client, mock_session):
+    """Test info response structure validation."""
+    # Mock response missing required fields
+    mock_response = AsyncMock()
+    mock_response.json.return_value = {"ver": "0.13.0"}  # Missing "name" field
+    mock_session.get.return_value.__aenter__.return_value = mock_response
+
+    # Test - should succeed but log warning
+    result = await wled_client.get_info()
+
+    # Assertions
+    assert result == {"ver": "0.13.0"}
+    mock_session.get.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_presets_response_structure_validation(wled_client, mock_session):
+    """Test presets response structure validation."""
+    # Mock response with invalid presets structure
+    mock_response = AsyncMock()
+    mock_response.json.return_value = {"invalid": "structure"}  # Missing preset data
+    mock_session.get.return_value.__aenter__.return_value = mock_response
+
+    # Test - should succeed but log warning
+    result = await wled_client.get_presets()
+
+    # Assertions - get_presets handles validation internally
+    mock_session.get.assert_called_once()
