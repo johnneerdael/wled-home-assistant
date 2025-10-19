@@ -162,17 +162,13 @@ class WLEDJSONAPIDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     async def _async_update_data(self) -> Dict[str, Any]:
         """Update data via library with simplified error handling."""
         try:
-            _LOGGER.debug("Fetching essential data from WLED device at %s", self.client.host)
+            _LOGGER.debug("Fetching full state data from WLED device at %s", self.client.host)
 
-            # Use streamlined essential data extraction for better performance
-            essential_state = await self.client.get_essential_state()
+            # Use full state to get effects, palettes, info, and state data in single API call
+            full_state = await self.client.get_full_state()
 
-            # Convert essential state to dictionary for Home Assistant
-            data = essential_state.to_state_dict()
-
-            # Include raw essential data for advanced features
-            if essential_state.raw_state:
-                data["_raw_state"] = essential_state.raw_state
+            # Use complete state dict with effects, palettes, info, and state
+            data = full_state
 
             # Check if presets need to be updated
             await self._async_update_presets_if_needed()
@@ -180,7 +176,7 @@ class WLEDJSONAPIDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             # Reset failed polls counter on successful update
             self._failed_polls = 0
             self._set_connection_state("connected")
-            _LOGGER.debug("Successfully updated essential data from WLED device at %s: %s",
+            _LOGGER.debug("Successfully updated full state data from WLED device at %s: %s",
                          self.client.host, list(data.keys()))
 
             return data
@@ -528,3 +524,84 @@ class WLEDJSONAPIDataCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             error_msg = f"Unexpected error activating playlist {playlist_id} on WLED device at {self.client.host}: {err}"
             _LOGGER.error(error_msg)
             raise WLEDPlaylistLoadError(error_msg, playlist_id=playlist_id) from err
+
+    async def async_set_palette_for_all_segments(self, palette_id: int) -> Dict[str, Any]:
+        """Set the palette on all segments of the WLED device with comprehensive logging."""
+        if not isinstance(palette_id, int) or palette_id < 0:
+            error_msg = f"Invalid palette ID provided: {palette_id}. Must be a non-negative integer."
+            _LOGGER.error(error_msg)
+            raise WLEDCommandError(error_msg, command={"pal": palette_id}, host=self.client.host)
+
+        # Get current segments from state data
+        state = self.data.get("state", {})
+        segments = state.get("seg", [])
+
+        if not segments:
+            error_msg = "No segments found in WLED device state data"
+            _LOGGER.error(error_msg)
+            raise WLEDCommandError(error_msg, command={"pal": palette_id}, host=self.client.host)
+
+        # Build segment commands
+        segment_commands = []
+        for seg in segments:
+            seg_id = seg.get("id")
+            if seg_id is not None:
+                segment_commands.append({"id": seg_id, "pal": palette_id})
+            else:
+                _LOGGER.warning("Segment without ID found in WLED device data, skipping")
+
+        if not segment_commands:
+            error_msg = "No valid segments found to apply palette"
+            _LOGGER.error(error_msg)
+            raise WLEDCommandError(error_msg, command={"pal": palette_id}, host=self.client.host)
+
+        # Create command
+        command = {"seg": segment_commands}
+
+        # Log palette command details
+        _LOGGER.info(
+            "WLED Set Palette: %s | Palette: %s | Segments: %s",
+            self.client.host, palette_id, [cmd["id"] for cmd in segment_commands]
+        )
+
+        # Get current palette for logging
+        current_palette = None
+        if segments:
+            main_seg = segments[0]  # Use first segment as reference
+            current_palette = main_seg.get("pal")
+
+        _LOGGER.debug(
+            "WLED Palette Change: %s | Current: %s -> New: %s | Segments: %d",
+            self.client.host, current_palette, palette_id, len(segment_commands)
+        )
+
+        try:
+            response = await self.async_send_command(command)
+
+            # Log successful palette change
+            _LOGGER.info(
+                "WLED Palette Success: %s | Palette: %s -> %s | Applied to %d segments",
+                self.client.host, current_palette, palette_id, len(segment_commands)
+            )
+
+            return response
+
+        except (WLEDTimeoutError, WLEDNetworkError, WLEDAuthenticationError,
+                WLEDConnectionError, WLEDInvalidResponseError, WLEDCommandError) as err:
+            # Handle error with comprehensive logging
+            _LOGGER.error(
+                "WLED Palette Failed: %s | Palette: %s | Error Type: %s | Error: %s",
+                self.client.host, palette_id, type(err).__name__, str(err)
+            )
+            raise
+
+        except Exception as err:
+            # Handle unexpected errors with detailed logging
+            _LOGGER.error(
+                "WLED Palette Unexpected Error: %s | Palette: %s | Error Type: %s | Error: %s",
+                self.client.host, palette_id, type(err).__name__, str(err)
+            )
+            raise WLEDCommandError(
+                f"Unexpected error setting palette {palette_id} on WLED device at {self.client.host}: {err}",
+                command=command, host=self.client.host, original_error=err
+            ) from err

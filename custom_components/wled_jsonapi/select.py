@@ -9,7 +9,17 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, KEY_NAME, KEY_PRESET
+from .const import (
+    DOMAIN,
+    KEY_NAME,
+    KEY_PALETTE,
+    KEY_PRESET,
+    KEY_MAC,
+    KEY_ARCH,
+    DEFAULT_DEVICE_NAME,
+    MAC_PREFIX,
+    ARCH_PREFIX
+)
 from .coordinator import WLEDJSONAPIDataCoordinator
 from .exceptions import (
     WLEDConnectionError,
@@ -38,17 +48,78 @@ PLAYLIST_SELECT_DESCRIPTION = SelectEntityDescription(
     icon="mdi:playlist-play",
 )
 
+PALETTE_SELECT_DESCRIPTION = SelectEntityDescription(
+    key="palette",
+    translation_key="palette",
+    icon="mdi:palette",
+)
 
-class WLEDJSONAPIPresetSelect(CoordinatorEntity, SelectEntity):
-    """Representation of a WLED JSONAPI preset selector."""
+
+class WLEDJSONAPISelectBase(CoordinatorEntity, SelectEntity):
+    """Base class for WLED JSONAPI select entities with shared device naming."""
 
     _attr_has_entity_name = True
+
+    def __init__(self, coordinator: WLEDJSONAPIDataCoordinator, entry: ConfigEntry) -> None:
+        """Initialize the WLED JSONAPI select base."""
+        super().__init__(coordinator)
+        self._entry = entry
+
+    def _get_device_name(self, info: Dict[str, Any]) -> str:
+        """Get device name with improved fallback strategy.
+
+        Priority order:
+        1. Device name from WLED config
+        2. MAC address based name (e.g., "WLED-A1B2C3")
+        3. Architecture-based name (e.g., "WLED ESP32")
+        4. Generic name ("WLED Device")
+
+        Args:
+            info: Device info dictionary from WLED API
+
+        Returns:
+            Device name string, never None
+        """
+        # Priority 1: Try device name from WLED info first
+        device_name = info.get(KEY_NAME)
+        if device_name and isinstance(device_name, str):
+            device_name = device_name.strip()
+            if device_name:
+                _LOGGER.debug("Using WLED device name: %s", device_name)
+                return device_name
+
+        # Priority 2: Try MAC address based name
+        mac = info.get(KEY_MAC)
+        if mac and isinstance(mac, str):
+            mac_clean = mac.replace(":", "").replace("-", "").upper()
+            if len(mac_clean) >= 6:
+                mac_suffix = mac_clean[-6:]
+                mac_name = f"{MAC_PREFIX}{mac_suffix}"
+                _LOGGER.debug("Using MAC-based name: %s (from MAC: %s)", mac_name, mac)
+                return mac_name
+
+        # Priority 3: Try architecture-based name
+        arch = info.get(KEY_ARCH)
+        if arch and isinstance(arch, str):
+            arch_clean = arch.strip()
+            if arch_clean and arch_clean.lower() != "unknown":
+                arch_name = f"{ARCH_PREFIX}{arch_clean}"
+                _LOGGER.debug("Using architecture-based name: %s", arch_name)
+                return arch_name
+
+        # Priority 4: Final fallback - generic name
+        _LOGGER.debug("Using default device name: %s", DEFAULT_DEVICE_NAME)
+        return DEFAULT_DEVICE_NAME
+
+
+class WLEDJSONAPIPresetSelect(WLEDJSONAPISelectBase):
+    """Representation of a WLED JSONAPI preset selector."""
+
     entity_description = PRESET_SELECT_DESCRIPTION
 
     def __init__(self, coordinator: WLEDJSONAPIDataCoordinator, entry: ConfigEntry) -> None:
         """Initialize the WLED JSONAPI preset selector."""
-        super().__init__(coordinator)
-        self._entry = entry
+        super().__init__(coordinator, entry)
         self._attr_unique_id = f"{entry.entry_id}_preset_select"
         self._attr_current_option = None
 
@@ -63,7 +134,7 @@ class WLEDJSONAPIPresetSelect(CoordinatorEntity, SelectEntity):
         info = self.coordinator.data.get("info", {})
         return DeviceInfo(
             identifiers={(DOMAIN, self._entry.unique_id)},
-            name=info.get(KEY_NAME, f"WLED ({self._entry.data['host']})"),
+            name=self._get_device_name(info),
             manufacturer="WLED",
             model=info.get("arch", "Unknown"),
             sw_version=info.get("ver", "Unknown"),
@@ -172,16 +243,14 @@ class WLEDJSONAPIPresetSelect(CoordinatorEntity, SelectEntity):
             )
 
 
-class WLEDJSONAPIPlaylistSelect(CoordinatorEntity, SelectEntity):
+class WLEDJSONAPIPlaylistSelect(WLEDJSONAPISelectBase):
     """Representation of a WLED JSONAPI playlist selector."""
 
-    _attr_has_entity_name = True
     entity_description = PLAYLIST_SELECT_DESCRIPTION
 
     def __init__(self, coordinator: WLEDJSONAPIDataCoordinator, entry: ConfigEntry) -> None:
         """Initialize the WLED JSONAPI playlist selector."""
-        super().__init__(coordinator)
-        self._entry = entry
+        super().__init__(coordinator, entry)
         self._attr_unique_id = f"{entry.entry_id}_playlist_select"
         self._attr_current_option = None
 
@@ -196,7 +265,7 @@ class WLEDJSONAPIPlaylistSelect(CoordinatorEntity, SelectEntity):
         info = self.coordinator.data.get("info", {})
         return DeviceInfo(
             identifiers={(DOMAIN, self._entry.unique_id)},
-            name=info.get(KEY_NAME, f"WLED ({self._entry.data['host']})"),
+            name=self._get_device_name(info),
             manufacturer="WLED",
             model=info.get("arch", "Unknown"),
             sw_version=info.get("ver", "Unknown"),
@@ -305,6 +374,147 @@ class WLEDJSONAPIPlaylistSelect(CoordinatorEntity, SelectEntity):
             )
 
 
+class WLEDPaletteSelect(WLEDJSONAPISelectBase):
+    """Representation of a WLED palette selector."""
+
+    entity_description = PALETTE_SELECT_DESCRIPTION
+
+    def __init__(self, coordinator: WLEDJSONAPIDataCoordinator, entry: ConfigEntry) -> None:
+        """Initialize the WLED palette selector."""
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.entry_id}_palette_select"
+
+    @property
+    def available(self) -> bool:
+        """Return True if the select is available."""
+        return self.coordinator.available
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device info for this select."""
+        info = self.coordinator.data.get("info", {})
+        device_name = self._get_device_name(info)
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._entry.unique_id)},
+            name=device_name,
+            manufacturer="WLED",
+            model=info.get(KEY_ARCH, "Unknown"),
+            sw_version=info.get(KEY_VERSION, "Unknown"),
+            configuration_url=f"http://{self._entry.data['host']}",
+        )
+
+    @property
+    def current_option(self) -> Optional[str]:
+        """Return the current selected palette."""
+        state = self.coordinator.data.get("state", {})
+        segments = state.get("seg", [])
+
+        if segments:
+            # Use main segment or first segment for current palette
+            main_seg_index = state.get("mainseg", 0)
+            if 0 <= main_seg_index < len(segments):
+                segment = segments[main_seg_index]
+            else:
+                segment = segments[0]
+
+            current_palette_id = segment.get(KEY_PALETTE)
+            if current_palette_id is not None:
+                palettes = self.coordinator.data.get("palettes", [])
+                if 0 <= current_palette_id < len(palettes):
+                    return palettes[current_palette_id]
+
+        return None
+
+    @property
+    def options(self) -> List[str]:
+        """Return the list of available palettes."""
+        return self.coordinator.data.get("palettes", [])
+
+    async def async_select_option(self, option: str) -> None:
+        """Change the selected palette with comprehensive logging and error handling."""
+        host = self._entry.data['host']
+
+        # Log palette selection attempt at INFO level
+        _LOGGER.info(
+            "WLED Palette Select: %s | Available: %s | Current: %s -> %s",
+            host, self.coordinator.available, self.current_option, option
+        )
+
+        if not self.coordinator.available:
+            _LOGGER.warning(
+                "WLED Palette Select Failed: %s | Device unavailable | Last Error: %s",
+                host, self.coordinator.last_error or "Unknown"
+            )
+            return
+
+        if not isinstance(option, str) or not option.strip():
+            _LOGGER.error(
+                "WLED Palette Select Invalid: %s | Option: '%s' | Must be non-empty string",
+                host, option
+            )
+            return
+
+        palettes = self.coordinator.data.get("palettes", [])
+
+        # Log palette lookup details
+        _LOGGER.debug(
+            "WLED Palette Lookup: %s | Requested: '%s' | Available: %s",
+            host, option, palettes
+        )
+
+        if option in palettes:
+            palette_id = palettes.index(option)
+            _LOGGER.info(
+                "WLED Palette Found: %s | Palette: '%s' -> ID: %s",
+                host, option, palette_id
+            )
+
+            # Log the final command that will be sent
+            _LOGGER.info(
+                "WLED Palette Select Command: %s | Palette: '%s' (ID: %s)",
+                host, option, palette_id
+            )
+
+            try:
+                await self.coordinator.async_set_palette_for_all_segments(palette_id)
+                _LOGGER.info("WLED Palette Select Success: %s | Palette: '%s'", host, option)
+
+            except WLEDTimeoutError as err:
+                _LOGGER.error(
+                    "WLED Palette Select Timeout: %s | Device may be busy or unresponsive | Error: %s",
+                    host, err
+                )
+
+            except WLEDNetworkError as err:
+                _LOGGER.error(
+                    "WLED Palette Select Network Error: %s | Check network connectivity and IP address | Error: %s",
+                    host, err
+                )
+
+            except WLEDCommandError as err:
+                _LOGGER.error(
+                    "WLED Palette Select Command Error: %s | Device may not support this command | Error: %s",
+                    host, err
+                )
+
+            except WLEDConnectionError as err:
+                _LOGGER.error(
+                    "WLED Palette Select Connection Error: %s | Check device status and network | Error: %s",
+                    host, err
+                )
+
+            except Exception as err:
+                _LOGGER.exception(
+                    "WLED Palette Select Unexpected Error: %s | Error: %s",
+                    host, err
+                )
+        else:
+            _LOGGER.warning(
+                "WLED Palette Not Found: %s | Palette: '%s' | Available: %s",
+                host, option, palettes
+            )
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -329,7 +539,15 @@ async def async_setup_entry(
     else:
         _LOGGER.debug("No playlists available, skipping playlist selector")
 
+    # Add palette selector - palettes are always available from coordinator data
+    palettes = coordinator.data.get("palettes", [])
+    if palettes:
+        entities.append(WLEDPaletteSelect(coordinator, entry))
+        _LOGGER.debug("Added palette selector entity with %d palettes", len(palettes))
+    else:
+        _LOGGER.debug("No palettes available, skipping palette selector")
+
     if entities:
         async_add_entities(entities)
     else:
-        _LOGGER.debug("No select entities added - no presets or playlists available")
+        _LOGGER.debug("No select entities added - no presets, playlists, or palettes available")

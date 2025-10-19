@@ -13,7 +13,7 @@ from custom_components.wled_jsonapi.exceptions import (
     WLEDTimeoutError,
     WLEDInvalidResponseError,
 )
-from custom_components.wled_jsonapi.models import WLEDPresetsData
+from custom_components.wled_jsonapi.models import WLEDPresetsData, WLEDEssentialPresetsData
 
 
 @pytest.fixture
@@ -40,18 +40,24 @@ def coordinator(mock_hass, mock_client):
 @pytest.mark.asyncio
 async def test_async_config_entry_first_refresh_success(coordinator):
     """Test successful initial data refresh."""
-    # Mock successful API responses
-    coordinator._client.get_state.return_value = {"on": True, "bri": 255}
-    coordinator._client.get_info.return_value = {"name": "Test WLED", "ver": "0.13.0"}
-    coordinator._client.get_presets.return_value = WLEDPresetsData()
+    # Mock successful API responses with full state data including effects
+    coordinator._client.get_full_state.return_value = {
+        "state": {"on": True, "bri": 255},
+        "info": {"name": "Test WLED", "ver": "0.13.0"},
+        "effects": ["Solid", "Blink", "Breathe"],
+        "palettes": ["Default", "Rainbow", "Sunset"]
+    }
+    coordinator._client.get_essential_presets.return_value = WLEDEssentialPresetsData()
 
     # Test initial refresh
     await coordinator.async_config_entry_first_refresh()
 
-    # Verify data was fetched
+    # Verify data was fetched including effects
     assert coordinator.data["state"]["on"] is True
     assert coordinator.data["info"]["name"] == "Test WLED"
-    assert coordinator.data["presets"] is not None
+    assert "effects" in coordinator.data
+    assert "palettes" in coordinator.data
+    assert len(coordinator.data["effects"]) == 3
     assert coordinator.connection_state == "connected"
 
 
@@ -69,24 +75,32 @@ async def test_async_config_entry_first_refresh_failure(coordinator):
 @pytest.mark.asyncio
 async def test_async_update_data_success(coordinator):
     """Test successful data update."""
-    # Mock successful API responses
-    coordinator._client.get_state.return_value = {"on": True, "bri": 200}
-    coordinator._client.get_info.return_value = {"name": "Test WLED", "ver": "0.13.0"}
+    # Mock successful API responses with full state including effects
+    coordinator._client.get_full_state.return_value = {
+        "state": {"on": True, "bri": 200},
+        "info": {"name": "Test WLED", "ver": "0.13.0"},
+        "effects": ["Solid", "Blink", "Breathe", "Wipe"],
+        "palettes": ["Default", "Rainbow"]
+    }
 
     # Test data update
     result = await coordinator._async_update_data()
 
-    # Verify data was fetched and returned
+    # Verify data was fetched and returned including effects
     assert result["state"]["on"] is True
     assert result["state"]["bri"] == 200
     assert result["info"]["name"] == "Test WLED"
+    assert "effects" in result
+    assert len(result["effects"]) == 4
+    assert "palettes" in result
+    assert len(result["palettes"]) == 2
 
 
 @pytest.mark.asyncio
 async def test_async_update_data_connection_error(coordinator):
     """Test data update with connection error."""
     # Mock connection error
-    coordinator._client.get_state.side_effect = WLEDConnectionError("Connection failed")
+    coordinator._client.get_full_state.side_effect = WLEDConnectionError("Connection failed")
 
     # Test that UpdateFailed is raised
     with pytest.raises(UpdateFailed, match="Error communicating with API"):
@@ -100,7 +114,7 @@ async def test_async_update_data_connection_error(coordinator):
 async def test_async_update_data_timeout_error(coordinator):
     """Test data update with timeout error."""
     # Mock timeout error
-    coordinator._client.get_state.side_effect = WLEDTimeoutError("Request timeout")
+    coordinator._client.get_full_state.side_effect = WLEDTimeoutError("Request timeout")
 
     # Test that UpdateFailed is raised
     with pytest.raises(UpdateFailed, match="Error communicating with API"):
@@ -114,7 +128,7 @@ async def test_async_update_data_timeout_error(coordinator):
 async def test_async_update_data_invalid_response(coordinator):
     """Test data update with invalid response."""
     # Mock invalid response
-    coordinator._client.get_state.side_effect = WLEDInvalidResponseError("Invalid JSON")
+    coordinator._client.get_full_state.side_effect = WLEDInvalidResponseError("Invalid JSON")
 
     # Test that UpdateFailed is raised
     with pytest.raises(UpdateFailed, match="Error communicating with API"):

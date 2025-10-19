@@ -16,7 +16,20 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, KEY_BRIGHTNESS, KEY_EFFECT, KEY_NAME, KEY_ON, KEY_PALETTE, KEY_PRESET
+from .const import (
+    DOMAIN,
+    KEY_BRIGHTNESS,
+    KEY_EFFECT,
+    KEY_NAME,
+    KEY_ON,
+    KEY_PALETTE,
+    KEY_PRESET,
+    KEY_MAC,
+    KEY_ARCH,
+    DEFAULT_DEVICE_NAME,
+    MAC_PREFIX,
+    ARCH_PREFIX
+)
 from .coordinator import WLEDJSONAPIDataCoordinator
 from .exceptions import (
     WLEDConnectionError,
@@ -43,6 +56,52 @@ class WLEDJSONAPILight(CoordinatorEntity, LightEntity):
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_light"
 
+    def _get_device_name(self, info: Dict[str, Any]) -> str:
+        """Get device name with improved fallback strategy.
+
+        Priority order:
+        1. Device name from WLED config
+        2. MAC address based name (e.g., "WLED-A1B2C3")
+        3. Architecture-based name (e.g., "WLED ESP32")
+        4. Generic name ("WLED Device")
+
+        Args:
+            info: Device info dictionary from WLED API
+
+        Returns:
+            Device name string, never None
+        """
+        # Priority 1: Try device name from WLED info first
+        device_name = info.get(KEY_NAME)
+        if device_name and isinstance(device_name, str):
+            device_name = device_name.strip()
+            if device_name:
+                _LOGGER.debug("Using WLED device name: %s", device_name)
+                return device_name
+
+        # Priority 2: Try MAC address based name
+        mac = info.get(KEY_MAC)
+        if mac and isinstance(mac, str):
+            mac_clean = mac.replace(":", "").replace("-", "").upper()
+            if len(mac_clean) >= 6:
+                mac_suffix = mac_clean[-6:]
+                mac_name = f"{MAC_PREFIX}{mac_suffix}"
+                _LOGGER.debug("Using MAC-based name: %s (from MAC: %s)", mac_name, mac)
+                return mac_name
+
+        # Priority 3: Try architecture-based name
+        arch = info.get(KEY_ARCH)
+        if arch and isinstance(arch, str):
+            arch_clean = arch.strip()
+            if arch_clean and arch_clean.lower() != "unknown":
+                arch_name = f"{ARCH_PREFIX}{arch_clean}"
+                _LOGGER.debug("Using architecture-based name: %s", arch_name)
+                return arch_name
+
+        # Priority 4: Final fallback - generic name
+        _LOGGER.debug("Using default device name: %s", DEFAULT_DEVICE_NAME)
+        return DEFAULT_DEVICE_NAME
+
     @property
     def available(self) -> bool:
         """Return True if the light is available."""
@@ -52,9 +111,16 @@ class WLEDJSONAPILight(CoordinatorEntity, LightEntity):
     def device_info(self) -> DeviceInfo:
         """Return device info for this light."""
         info = self.coordinator.data.get("info", {})
+        device_name = self._get_device_name(info)
+
+        _LOGGER.debug(
+            "WLED device info: name='%s', host='%s', identifiers=%s",
+            device_name, self._entry.data['host'], {(DOMAIN, self._entry.unique_id)}
+        )
+
         return DeviceInfo(
             identifiers={(DOMAIN, self._entry.unique_id)},
-            name=info.get(KEY_NAME, f"WLED ({self._entry.data['host']})"),
+            name=device_name,
             manufacturer="WLED",
             model=info.get("arch", "Unknown"),
             sw_version=info.get("ver", "Unknown"),

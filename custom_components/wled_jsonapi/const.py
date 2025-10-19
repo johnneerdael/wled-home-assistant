@@ -42,6 +42,12 @@ KEY_VERSION = "ver"
 KEY_LED_COUNT = "leds"
 KEY_MAC = "mac"
 KEY_IP = "ip"
+KEY_ARCH = "arch"
+
+# Device naming constants
+DEFAULT_DEVICE_NAME = "WLED Device"
+MAC_PREFIX = "WLED-"
+ARCH_PREFIX = "WLED "
 
 # Default values
 DEFAULT_BRIGHTNESS = 255
