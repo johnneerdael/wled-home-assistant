@@ -51,3 +51,31 @@ DEFAULT_TRANSITION = 0
 ERROR_CANNOT_CONNECT = "cannot_connect"
 ERROR_INVALID_AUTH = "invalid_auth"
 ERROR_UNKNOWN = "unknown"
+
+# Hostname validation constants
+MAX_HOSTNAME_LENGTH = 253
+MIN_HOSTNAME_LENGTH = 1
+MAX_LABEL_LENGTH = 63
+
+# Dangerous characters for hostname validation
+DANGEROUS_HOSTNAME_CHARS = [';', '&', '|', '`', '$', '(', ')', '{', '}', '[', ']', '<', '>', '"', "'"]
+
+# Security validation patterns
+PROTOCOL_PATTERN = "://"
+PATH_TRAVERSAL_PATTERN = "../"
+PATH_TRAVERSANCE_WINDOWS_PATTERN = "..\\"
+CONSECUTIVE_DOTS_PATTERN = ".."
+INVALID_HOSTNAME_START_CHARS = ['.', '-']
+INVALID_HOSTNAME_END_CHARS = ['.', '-']
+
+# Network security messages
+MSG_PUBLIC_IP_WARNING = "Public IP addresses not recommended for IoT devices for security reasons"
+MSG_PROTOCOL_INJECTION = "Protocol not allowed in hostname. Only enter IP address or hostname."
+MSG_DANGEROUS_CHARS = "Invalid characters detected in hostname"
+MSG_PATH_TRAVERSAL = "Invalid hostname format"
+MSG_INVALID_LENGTH = "Invalid hostname length (must be 1-253 characters)"
+MSG_INVALID_FORMAT = "Invalid hostname format"
+MSG_VALID_HOSTNAME = "Valid hostname"
+MSG_PRIVATE_IP = "Private IP address"
+MSG_LOCALHOST_IP = "Localhost address"
+MSG_LINK_LOCAL_IP = "Link-local address"

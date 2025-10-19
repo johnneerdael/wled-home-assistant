@@ -77,3 +77,15 @@ class WLEDPlaylistError(Exception):
 
 class WLEDPlaylistLoadError(WLEDPlaylistError):
     """Exception raised when a playlist cannot be loaded or applied."""
+
+
+class WLEDPresetNotFoundError(WLEDPresetError):
+    """Raised when a requested preset is not found."""
+
+    def __init__(self, preset_id: str, message: str | None = None) -> None:
+        """Initialize preset not found error."""
+        super().__init__(message or f"Preset '{preset_id}' not found", preset_id)
+
+
+class WLEDPlaylistNotFoundError(WLEDPlaylistError):
+    """Exception raised when a playlist is not found on the device."""

@@ -67,6 +67,33 @@ class WLEDPlaylist:
             shuffle=shuffle
         )
 
+    @classmethod
+    def from_playlist_response(cls, playlist_id: str, playlist_data: Dict[str, Any]) -> "WLEDPlaylist":
+        """Create WLEDPlaylist from essential playlist response data."""
+        # Validate input parameters
+        if not isinstance(playlist_data, dict):
+            raise ValueError(f"Playlist data must be a dictionary, got {type(playlist_data).__name__}")
+
+        # Extract the display name from the "n" field, fallback to ID
+        name = playlist_data.get("n", f"Playlist {playlist_id}")
+
+        # For essential playlist data, use default values for missing playlist configuration
+        # This handles the case where we only have basic playlist info from essential data
+        try:
+            playlist_id_int = int(playlist_id)
+        except (ValueError, TypeError) as err:
+            raise ValueError(f"Invalid playlist ID '{playlist_id}': {err}") from err
+
+        return cls(
+            id=playlist_id_int,
+            name=name,
+            presets=[],  # Default empty preset list
+            durations=[],  # Default empty durations
+            transitions=[],  # Default empty transitions
+            repeat=0,  # Default no repeat
+            shuffle=False  # Default no shuffle
+        )
+
 
 @dataclass
 class WLEDPresetsData:

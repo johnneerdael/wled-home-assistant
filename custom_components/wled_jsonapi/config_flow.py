@@ -12,7 +12,29 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.typing import ConfigType
 
 from .api import WLEDJSONAPIClient
-from .const import DOMAIN
+from .const import (
+    DOMAIN,
+    MAX_HOSTNAME_LENGTH,
+    MIN_HOSTNAME_LENGTH,
+    MAX_LABEL_LENGTH,
+    DANGEROUS_HOSTNAME_CHARS,
+    PROTOCOL_PATTERN,
+    PATH_TRAVERSAL_PATTERN,
+    PATH_TRAVERSANCE_WINDOWS_PATTERN,
+    CONSECUTIVE_DOTS_PATTERN,
+    INVALID_HOSTNAME_START_CHARS,
+    INVALID_HOSTNAME_END_CHARS,
+    MSG_PUBLIC_IP_WARNING,
+    MSG_PROTOCOL_INJECTION,
+    MSG_DANGEROUS_CHARS,
+    MSG_PATH_TRAVERSAL,
+    MSG_INVALID_LENGTH,
+    MSG_INVALID_FORMAT,
+    MSG_VALID_HOSTNAME,
+    MSG_PRIVATE_IP,
+    MSG_LOCALHOST_IP,
+    MSG_LINK_LOCAL_IP,
+)
 from .exceptions import (
     WLEDConnectionError,
     WLEDInvalidResponseError,
@@ -46,33 +68,33 @@ class WLEDJSONAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         host = host.strip()
 
         # Check for reasonable length
-        if len(host) > 253 or len(host) < 1:
-            return False, "Invalid hostname length (must be 1-253 characters)"
+        if len(host) > MAX_HOSTNAME_LENGTH or len(host) < MIN_HOSTNAME_LENGTH:
+            return False, MSG_INVALID_LENGTH
 
         # Prevent protocol injection
-        if '://' in host.lower():
-            return False, "Protocol not allowed in hostname. Only enter IP address or hostname."
+        if PROTOCOL_PATTERN in host.lower():
+            return False, MSG_PROTOCOL_INJECTION
 
         # Prevent command injection attempts
-        if any(char in host for char in [';', '&', '|', '`', '$', '(', ')', '{', '}', '[', ']', '<', '>', '"', "'"]):
-            return False, "Invalid characters detected in hostname"
+        if any(char in host for char in DANGEROUS_HOSTNAME_CHARS):
+            return False, MSG_DANGEROUS_CHARS
 
         # Prevent path traversal attempts
-        if '../' in host or '..\\' in host:
-            return False, "Invalid hostname format"
+        if PATH_TRAVERSAL_PATTERN in host or PATH_TRAVERSANCE_WINDOWS_PATTERN in host:
+            return False, MSG_PATH_TRAVERSAL
 
         # Validate IP address format
         try:
             ip = ipaddress.ip_address(host)
-            if ip.is_private:
-                return True, "Private IP address"
-            elif ip.is_loopback:
-                return True, "Localhost address"
+            if ip.is_loopback:
+                return True, MSG_LOCALHOST_IP
             elif ip.is_link_local:
-                return True, "Link-local address"
+                return True, MSG_LINK_LOCAL_IP
+            elif ip.is_private:
+                return True, MSG_PRIVATE_IP
             else:
                 # Public IP addresses are not recommended for IoT devices
-                return False, "Public IP addresses not recommended for IoT devices for security reasons"
+                return False, MSG_PUBLIC_IP_WARNING
         except ValueError:
             pass
 
@@ -82,21 +104,21 @@ class WLEDJSONAPIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Cannot contain consecutive dots
         if re.match(r'^[a-zA-Z0-9.-]+$', host):
             # Check for invalid hostname patterns
-            if '..' in host:
-                return False, "Invalid hostname format (consecutive dots not allowed)"
-            if host.startswith(('.', '-')):
-                return False, "Invalid hostname format (cannot start with dot or hyphen)"
-            if host.endswith(('.', '-')):
-                return False, "Invalid hostname format (cannot end with dot or hyphen)"
+            if CONSECUTIVE_DOTS_PATTERN in host:
+                return False, f"{MSG_INVALID_FORMAT} (consecutive dots not allowed)"
+            if host.startswith(tuple(INVALID_HOSTNAME_START_CHARS)):
+                return False, f"{MSG_INVALID_FORMAT} (cannot start with dot or hyphen)"
+            if host.endswith(tuple(INVALID_HOSTNAME_END_CHARS)):
+                return False, f"{MSG_INVALID_FORMAT} (cannot end with dot or hyphen)"
 
             # Check if any label is too long (max 63 characters per label)
             labels = host.split('.')
-            if any(len(label) > 63 for label in labels):
-                return False, "Invalid hostname format (label too long)"
+            if any(len(label) > MAX_LABEL_LENGTH for label in labels):
+                return False, f"{MSG_INVALID_FORMAT} (label too long)"
 
-            return True, "Valid hostname"
+            return True, MSG_VALID_HOSTNAME
 
-        return False, "Invalid hostname format. Use valid IP address (e.g., 192.168.1.100) or hostname (e.g., wled.local)"
+        return False, f"{MSG_INVALID_FORMAT}. Use valid IP address (e.g., 192.168.1.100) or hostname (e.g., wled.local)"
 
     async def async_step_user(
         self, user_input: Optional[Dict[str, Any]] = None
