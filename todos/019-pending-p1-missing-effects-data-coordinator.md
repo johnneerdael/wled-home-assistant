@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 priority: p1
 issue_id: "019"
 tags: [bug, critical, effects, data-retrieval, coordinator, api-endpoint]

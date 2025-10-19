@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 priority: p1
 issue_id: "020"
 tags: [feature, select-entity, palettes, configuration, ui-improvement]
